@@ -73,11 +73,7 @@ int rush_exit(char **args) {
     return 0; // exit prompting loop, which also the shell
 }
 
-/**
-  @brief Launch a program and wait for it to terminate.
-  @param args Null terminated list of arguments (including program).
-  @return Always returns 1, to continue execution.
-  */
+// launch program and wait it to terminate, return 1 to continue running
 int rush_launch(char **args) {
     pid_t pid, wpid;
     int status;
@@ -103,11 +99,7 @@ int rush_launch(char **args) {
     return 1;
 }
 
-/**
-  @brief Execute shell built-in or launch program.
-  @param args Null terminated list of arguments.
-  @return 1 if the shell should continue running, 0 if it should terminate
-  */
+// execute built in commands or launch commands, return 1 to keep shell running
 int rush_execute(char **args) {
     if (args[0] == NULL) {
         // An empty command was entered.

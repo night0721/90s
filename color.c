@@ -3,7 +3,6 @@
 #include <stdlib.h>
 
 // color str in place
-
 void color_text(char str[], const char *color) {
     int size = snprintf(NULL, 0, "\x1b[38;2;%sm%s\x1b[0m", color, str) + 1; // calculate size that is needed for colored string
     if (size < 0) {
