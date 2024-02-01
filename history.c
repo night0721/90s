@@ -112,7 +112,7 @@ char **get_all_history() {
         fprintf(stderr, "rush: Error allocating memory\n");
         exit(EXIT_FAILURE);
     }
-    char buffer[RL_BUFSIZE];  // Adjust the buffer size as needed
+    char buffer[RL_BUFSIZE];
     int line_count = 0;
 
     while (fgets(buffer, sizeof(buffer), history_file) != NULL) {
