@@ -3,9 +3,10 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <limits.h>
+#include <linux/limits.h>
 #include <time.h>
 #include <stdbool.h>
+#include <signal.h>
 
 #include "color.h"
 #include "constants.h"
@@ -13,7 +14,7 @@
 #include "commands.h"
 
 void quit_sig(int sig) {
-    return 0;
+    exit(0);
 }
 
 void change_terminal_attribute(int option) {  
@@ -93,7 +94,7 @@ char *readline(char **paths) {
         int buf_len = strlen(buffer);
         //printf("buflen %i\n", buf_len);
         if (buf_len > 0) {
-            printf("\033[%dD", strlen(buffer));  // move cursor to the beginning
+            printf("\033[%ldD", strlen(buffer));  // move cursor to the beginning
             printf("\033[K"); // clear line to the right of cursor
         }
         // check each character user has input
