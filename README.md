@@ -17,15 +17,15 @@ $ ./rush
 
 # Features
 - Showing current time and directory with custom color
-- syntax highlighting on valid commands using ANSI colors
-- history navigation using up and down keys
+- Syntax highlighting on valid commands using ANSI colors
+- History navigation using up and down keys with history command
+- Built in commands
 
 # Todo Features
 - Pipe
 - stdin, stdout, stderr redirect
 - background jobs
 - editing using left and right arrow keys
-- history command
 - export command to setenv
 - tab completion
 

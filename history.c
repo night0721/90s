@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <limits.h>
 
 #include "constants.h"
 
@@ -88,4 +89,49 @@ char *read_command(int direction) {
     }
     fclose(history_file);
     return last_nlf + 1; // return the string from the new line feed
+}
+
+int is_duplicate(char **history, int line_count, char *line) {
+    for (int i = 0; i < line_count; ++i) {
+        if (strcmp(history[i], line) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+char **get_all_history() {
+    history_file = fopen(histfile_path, "r");
+    if (history_file == NULL) {
+        fprintf(stderr, "rush: Error opening history file\n");
+        exit(EXIT_FAILURE);
+    }
+
+    char **history = malloc(MAX_HISTORY * sizeof(char*));
+    if (history == NULL) {
+        fprintf(stderr, "rush: Error allocating memory\n");
+        exit(EXIT_FAILURE);
+    }
+    char buffer[RL_BUFSIZE];  // Adjust the buffer size as needed
+    int line_count = 0;
+
+    while (fgets(buffer, sizeof(buffer), history_file) != NULL) {
+        buffer[strcspn(buffer, "\n")] = '\0';
+        if (!is_duplicate(history, line_count, buffer)) {
+            history[line_count] = strdup(buffer);
+            if (history[line_count] == NULL) {
+                fprintf(stderr, "Error allocating memory\n");
+                exit(EXIT_FAILURE);
+            }
+            line_count++;
+            if (line_count >= MAX_HISTORY) {
+                fprintf(stderr, "Maximum number of lines reached.\n");
+                exit(EXIT_FAILURE);
+            }
+        } 
+    }
+
+    fclose(history_file);
+    history[line_count] = NULL;
+    return history;
 }

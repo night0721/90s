@@ -11,7 +11,7 @@ void color_text(char str[], const char *color) {
     }
     char *buf = malloc(size);
     if (buf == NULL) {
-        fprintf(stderr, "rush: Memory allocation failed\n");
+        fprintf(stderr, "rush: Error allocating memory\n");
         exit(EXIT_FAILURE);
     }
 

@@ -1,4 +1,3 @@
-#include <sys/wait.h>
 #include <termios.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -7,112 +6,14 @@
 #include <limits.h>
 #include <time.h>
 #include <stdbool.h>
-#include <errno.h>
 
 #include "color.h"
 #include "constants.h"
 #include "history.h"
+#include "commands.h"
 
-/*
- * Function Declarations for builtin shell commands:
- */
-int rush_cd(char **args);
-int help(char **args);
-int rush_exit(char **args);
-
-
-/*
- * List of builtin commands, followed by their corresponding functions.
- */
-char *builtin_str[] = {
-    "cd",
-    "help",
-    "exit"
-};
-
-int (*builtin_func[]) (char **) = {
-    &rush_cd,
-    &help,
-    &rush_exit
-};
-
-int rush_num_builtins() {
-    return sizeof(builtin_str) / sizeof(char *);
-}
-
-// change directory
-int rush_cd(char **args) {
-    if (args[1] == NULL) {
-        char *home = getenv("HOME");
-        if (chdir(home) != 0) {
-            perror("rush");
-        }
-    } else {
-        if (chdir(args[1]) != 0) {
-            perror("rush");
-        }
-    }
-    return 1;
-}
-
-// show help menu
-int help(char **args) {
-    printf("rush v0.01-alpha\n");
-    printf("Built in commands:\n");
-
-    for (int i = 0; i < rush_num_builtins(); i++) {
-        printf("  %s\n", builtin_str[i]);
-    }
-
-    printf("Use 'man' to read manual of programs\n");
-    printf("Licensed under GPL v3\n");
-    return 1;
-}
-
-int rush_exit(char **args) {
-    return 0; // exit prompting loop, which also the shell
-}
-
-// launch program and wait it to terminate, return 1 to continue running
-int rush_launch(char **args) {
-    pid_t pid, wpid;
-    int status;
-
-    pid = fork();
-    if (pid == 0) {
-        // Child process
-        if (execvp(args[0], args) == -1) {
-            if (errno == ENOENT) {
-                fprintf(stderr, "rush: command not found: %s\n", args[0]);
-            }
-        }
-        exit(EXIT_FAILURE);
-    } else if (pid < 0) {
-        perror("Cannot fork");
-    } else {
-        // Parent process
-        do {
-            wpid = waitpid(pid, &status, WUNTRACED);
-        } while (!WIFEXITED(status) && !WIFSIGNALED(status));
-    }
-
-    return 1;
-}
-
-// execute built in commands or launch commands, return 1 to keep shell running
-int rush_execute(char **args) {
-    if (args[0] == NULL) {
-        // An empty command was entered.
-        return 1;
-    }
-
-    for (int i = 0; i < rush_num_builtins(); i++) {
-        if (strcmp(args[0], builtin_str[i]) == 0) {
-            return (*builtin_func[i])(args);
-        }
-    }
-
-    return rush_launch(args);
+void quit_sig(int sig) {
+    return 0;
 }
 
 void change_terminal_attribute(int option) {  
@@ -165,20 +66,24 @@ bool find_command(char **paths, char *command) {
         if (access(current_path, X_OK) == 0) {
             // command is executable
             return true;
+        } else {
+            if (is_builtin(command)) {
+                return true;
+            }
         }
         paths++;
     }
     return false;
 }
 
-char *rush_read_line(char **paths) {
+char *readline(char **paths) {
     int bufsize = RL_BUFSIZE;
     int position = 0;
     char *buffer = malloc(sizeof(char) * bufsize);
     int c;
 
     if (!buffer) {
-        fprintf(stderr, "rush: allocation error\n");
+        fprintf(stderr, "rush: Error allocating memory\n");
         exit(EXIT_FAILURE);
     }
 
@@ -186,6 +91,7 @@ char *rush_read_line(char **paths) {
     while (1) {
         c = getchar(); // read a character
         int buf_len = strlen(buffer);
+        //printf("buflen %i\n", buf_len);
         if (buf_len > 0) {
             printf("\033[%dD", strlen(buffer));  // move cursor to the beginning
             printf("\033[K"); // clear line to the right of cursor
@@ -240,21 +146,45 @@ char *rush_read_line(char **paths) {
                 }
         }
         char *cmd_part = strchr(buffer, ' ');
+        char *command_without_arg = NULL;
+        int cmd_len = 0;
         bool valid;
+
         if (cmd_part != NULL) {
-            char *cmd = malloc(sizeof(char) * (cmd_part - buffer + 1));
+            cmd_len = cmd_part - buffer;
+            char *cmd = malloc(sizeof(char) * cmd_len + 1);
+            command_without_arg = malloc(sizeof(char) * cmd_len + 1);
+            if (cmd == NULL || command_without_arg == NULL) {
+                fprintf(stderr, "rush: Error allocating memory\n");
+                exit(EXIT_FAILURE);
+            }
             for (int i = 0; i < (cmd_part - buffer); i++) {
                 cmd[i] = buffer[i];
             }
-            cmd[cmd_part - buffer] = '\0';
+            strcpy(command_without_arg, cmd);
+            cmd[cmd_len] = '\0';
+            command_without_arg[cmd_len] = '\0';
             valid = find_command(paths, cmd);
         } else {
             valid = find_command(paths, buffer);
         }
+
         if (valid) {
-            printf("\x1b[38;2;000;255;000m%s\x1b[0m", buffer); // print green as valid command
+            if (command_without_arg != NULL) {
+                buffer += cmd_len;
+                printf("\x1b[38;2;137;180;250m%s\x1b[0m\x1b[38;2;255;255;255m%s\x1b[0m", command_without_arg, buffer); // print green as valid command, but only color the command, not the arguments
+                buffer -= cmd_len;
+            } else {
+                printf("\x1b[38;2;137;180;250m%s\x1b[0m", buffer); // print green as valid command
+            }
         } else {
-            printf("\x1b[38;2;255;000;000m%s\x1b[0m", buffer); // print red as sinvalid command
+            if (command_without_arg != NULL) {
+                buffer += cmd_len;
+                printf("\x1b[38;2;243;139;168m%s\x1b[0m\x1b[38;2;255;255;255m%s\x1b[0m", command_without_arg, buffer); // print green as valid command, but only color the command, not the arguments
+                buffer -= cmd_len;
+            } else {
+                printf("\x1b[38;2;243;139;168m%s\x1b[0m", buffer); // print red as sinvalid command
+            }
         }
         fflush(stdout);
 
@@ -263,7 +193,7 @@ char *rush_read_line(char **paths) {
             bufsize += RL_BUFSIZE;
             buffer = realloc(buffer, bufsize);
             if (!buffer) {
-                fprintf(stderr, "rush: allocation error\n");
+                fprintf(stderr, "rush: Error allocating memory\n");
                 exit(EXIT_FAILURE);
             }
         }
@@ -271,7 +201,7 @@ char *rush_read_line(char **paths) {
 }
 
 // split line into arguments
-char **rush_split_line(char *line) {
+char **argsplit(char *line) {
     int bufsize = TOK_BUFSIZE, position = 0;
     char **tokens = malloc(bufsize * sizeof(char*));
     char *token;
@@ -297,6 +227,11 @@ char **rush_split_line(char *line) {
 
         token = strtok(NULL, TOK_DELIM);
     }
+    // makes ls and diff have color without user typing it
+    if (strcmp(tokens[0], "ls") == 0 || strcmp(tokens[0], "diff") == 0) {
+        tokens[position] = "--color=auto";
+    }
+    position++;
     tokens[position] = NULL;
     return tokens;
 }
@@ -329,9 +264,9 @@ void command_loop(char **paths) {
         printf("%s %s %s ", time, cwd, arrow);
 
 
-        line = rush_read_line(paths);
-        args = rush_split_line(line);
-        status = rush_execute(args);
+        line = readline(paths);
+        args = argsplit(line);
+        status = execute(args);
 
         free(line);
         free(args);
@@ -339,9 +274,11 @@ void command_loop(char **paths) {
     };
 }
 
-
 int main(int argc, char **argv) {
     // setup
+    signal(SIGINT, quit_sig);
+    signal(SIGTERM, quit_sig);
+    signal(SIGQUIT, quit_sig);
     check_history_file();
     char **paths = setup_path_variable();
     change_terminal_attribute(1); // turn off echoing and disabling getchar requires pressing enter key to return

@@ -4,5 +4,6 @@
 void save_command_history(char *command);
 void check_history_file();
 char *read_command(int direction);
+char **get_all_history();
 
 #endif
