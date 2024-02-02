@@ -20,13 +20,22 @@ $ ./rush
 - Syntax highlighting on valid commands using ANSI colors
 - History navigation using up and down keys with history command
 - Built in commands
+- Export environment variable
+- Source commands from a file
+
+# Built in commands
+- cd
+- help
+- exit
+- history
+- export
+- source
 
 # Todo Features
 - Pipe
 - stdin, stdout, stderr redirect
 - background jobs
 - editing using left and right arrow keys
-- export command to setenv
 - tab completion
 
 # Credits

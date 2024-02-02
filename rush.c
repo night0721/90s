@@ -92,17 +92,18 @@ char *readline(char **paths) {
     while (1) {
         c = getchar(); // read a character
         int buf_len = strlen(buffer);
-        //printf("buflen %i\n", buf_len);
         if (buf_len > 0) {
             printf("\033[%ldD", strlen(buffer));  // move cursor to the beginning
             printf("\033[K"); // clear line to the right of cursor
         }
         // check each character user has input
-        // printf("%i\n", c);
         switch (c) {
             case EOF:
                 exit(EXIT_SUCCESS);
             case 10: // enter/new line feed
+                if (buf_len == 0) {
+                    break;
+                }
                 buffer[buf_len] = '\0';
                 // clear all characters after the command
                 for (int start = buf_len + 1; buffer[start] != '\0'; start++) {
@@ -124,14 +125,14 @@ char *readline(char **paths) {
                         char *last_command = read_command(1);
                         if (last_command != NULL) {
                             strcpy(buffer, last_command);
-                            buf_len = strlen(buffer);
+                            buf_len = strlen(buffer) - 1;
                         }
                         break;
                     } else if (arrow_key == 66) { // down
                         char *last_command = read_command(0);
                         if (last_command != NULL) {
                             strcpy(buffer, last_command);
-                            buf_len = strlen(buffer);
+                            buf_len = strlen(buffer) - 1;
                         }
                         break;
                     } else if (arrow_key == 67) { // right

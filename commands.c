@@ -7,27 +7,35 @@
 #include <sys/wait.h>
 
 #include "commands.h"
+#include "constants.h"
 #include "history.h"
+#include "rush.h"
 
 // Function declarations for builtin commands
 int cd(char **args);
 int help(char **args);
 int quit(char **args);
 int history(char **args);
+int export(char **args);
+int source(char **args);
 
 // List of builtin commands' names
 char *builtin_cmds[] = {
     "cd",
     "help",
     "exit",
-    "history"
+    "history",
+    "export",
+    "source"
 };
 
 int (*builtin_func[]) (char **) = {
     &cd,
     &help,
     &quit, // cant name it exit as it is taken
-    &history
+    &history,
+    &export,
+    &source
 };
 
 // number of built in commands
@@ -78,6 +86,57 @@ int history(char **args) {
 
     free(history);
     return 1;
+}
+
+int export(char **args) {
+    args++; // skip the command
+    while (*args != NULL) {
+        char *variable = strtok(*args, "=\n");
+        char *value = strtok(NULL, "=\n");
+        if (variable != NULL && value != NULL) {
+            if (setenv(variable, value, 1) != 0) {
+                fprintf(stderr, "rush: Error setting environment variable\n");
+                return 0;
+            }
+        } else {
+            printf("rush: [arg0: %s] [arg1: %s]", args[0], args[1]);
+            printf("rush: [Variable: %s] [Value: %s]\n", variable, value);
+            fprintf(stderr, "rush: Syntax error when setting environment variable\nUse \"export VARIABLE=VALUE\"\n");
+            return 0;
+        }
+        args++;
+    }
+    return 1;
+}
+
+int source(char **args) {
+    if (args[1] == NULL) {
+        fprintf(stderr, "rush: not enough arguments\n");
+        return -1;
+    }
+
+    FILE *file = fopen(args[1], "r");
+
+    if (file == NULL) {
+        fprintf(stderr, "rush: no such file or directory '%s'\n", args[1]);
+        return -1;
+    }
+
+    char line[RL_BUFSIZE];
+    int status;
+    while (fgets(line, sizeof(line), file) != NULL) {
+        // Remove newline character if present
+        size_t len = strlen(line);
+        if (len > 0 && line[len - 1] == '\n') {
+            line[len - 1] = '\0';
+        }
+
+        char **args = argsplit(line);
+        status = execute(args);
+    }
+
+    fclose(file);
+    return status; // Indicate success
 }
 
 bool is_builtin(char *command) {
