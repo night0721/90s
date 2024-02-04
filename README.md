@@ -2,6 +2,10 @@
 
 rush is a minimalistic shell for Unix systems written in C.
 
+# Preview
+[![Invalid command](https://nightly.502-bad-gateway.host/aqnpvvud.png)]
+[![Valid command](https://nightly.502-bad-gateway.host/xf80dq0b.png)]
+
 # Dependencies
 - gcc
 
