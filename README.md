@@ -3,8 +3,8 @@
 rush is a minimalistic shell for Unix systems written in C.
 
 # Preview
-[![Invalid command](https://nightly.502-bad-gateway.host/aqnpvvud.png)]
-[![Valid command](https://nightly.502-bad-gateway.host/xf80dq0b.png)]
+[![Valid command](https://r2.e-z.host/3c62bb3a-a8a9-43f6-afd6-553646f51dc4/aqnpvvud.png)]()
+[![Invalid command](https://nightly.502-bad-gateway.host/xf80dq0b.png)]()
 
 # Dependencies
 - gcc
@@ -47,3 +47,4 @@ $ ./rush
 - [dash](https://github.com/danishprakash/dash)
 - [Shell assignment](https://www.cs.cornell.edu/courses/cs414/2004su/homework/shell/shell.html)
 - [khol](https://github.com/SanketDG/khol/)
+
