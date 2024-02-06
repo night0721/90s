@@ -31,8 +31,17 @@ void change_terminal_attribute(int option) {
 
 char **setup_path_variable() {
     char *envpath = getenv("PATH");
+    if (envpath == NULL) {
+        // ?????
+        fprintf(stderr, "rush: PATH environment variable is missing\n");
+        exit(EXIT_FAILURE);
+    }
     char *path_cpy = malloc(sizeof(char) * (strlen(envpath) + 1));
     char *path = malloc(sizeof(char) * (strlen(envpath) + 1));
+    if (path_cpy == NULL || path == NULL) {
+        fprintf(stderr, "rush: Error allocating memory\n");
+        exit(EXIT_FAILURE);
+    }
     strcpy(path_cpy, envpath);
     strcpy(path, envpath);
     int path_count = 0;
@@ -45,6 +54,10 @@ char **setup_path_variable() {
     }
     path_count += 2; // adding one to be correct and one for terminator
     char **paths = malloc(sizeof(char *) * path_count);
+    if (paths == NULL) {
+        fprintf(stderr, "rush: Error allocating memory\n");
+        exit(EXIT_FAILURE);
+    }
     char *token = strtok(path, ":");
     int counter = 0;
     while (token != NULL) {
@@ -60,7 +73,6 @@ bool find_command(char **paths, char *command) {
     if (strcmp(command, "") == 0) {
         return false;
     }
-    int counter = 0;
     while (*paths != NULL) {
         char current_path[PATH_MAX];
         sprintf(current_path, "%s/%s", *paths, command);
@@ -136,15 +148,32 @@ char *readline(char **paths) {
                         }
                         break;
                     } else if (arrow_key == 67) { // right
-                        break;
+                        if (position < buf_len) {
+                            printf("\033[%dC", 1); // move cursor right
+                            position++;
+                        }
                     } else if (arrow_key == 68) { // left
-                        break;
-                    }
-                }
+                        if (position > 0) {
+                            printf("\033[%dD", 1); // move cursor right
+                            position--;
+                        }
+                    }                }
             default:
                 if (c > 31 && c < 127) {
-                    buffer[buf_len] = c;
-                    buffer[buf_len + 1] = '\0'; // make sure printf don't print random characters
+                    if (position == buf_len) {
+                        // Append character to the end of the buffer
+                        buffer[buf_len] = c;
+                        buffer[buf_len + 1] = '\0';
+                    } else {
+                        // Insert character at the current position
+                        memmove(&buffer[position + 1], &buffer[position], buf_len - position + 1);
+                        buffer[position] = c;
+                        printf("\033[s"); // Save cursor position
+                        printf("%s", &buffer[position]); // Print from the current position
+                        printf("\033[u"); // Restore cursor position
+                        printf("\033[%dC", 1); // move cursor right by one place
+                    }
+                    position++;
                 }
         }
         char *cmd_part = strchr(buffer, ' ');
@@ -209,7 +238,7 @@ char **argsplit(char *line) {
     char *token;
 
     if (!tokens) {
-        fprintf(stderr, "rush: Allocation error\n");
+        fprintf(stderr, "rush: Error allocating memory\n");
         exit(EXIT_FAILURE);
     }
 
@@ -222,7 +251,7 @@ char **argsplit(char *line) {
             bufsize += TOK_BUFSIZE;
             tokens = realloc(tokens, bufsize * sizeof(char*));
             if (!tokens) {
-                fprintf(stderr, "rush: Allocation error\n");
+                fprintf(stderr, "rush: Error allocating memory\n");
                 exit(EXIT_FAILURE);
             }
         }
@@ -258,7 +287,7 @@ void command_loop(char **paths) {
         char time[256];
         strcpy(time, timestr);
         color_text(time, lavender); // lavender colored time string
-        char *cwd = malloc(sizeof(char) * PATH_MAX);
+        char *cwd = malloc(sizeof(char) * (PATH_MAX + 2));
         sprintf(cwd, "[%s]", cwdstr);
         color_text(cwd, pink); // pink colored current directory
         char arrow[32] = "»";
