@@ -164,10 +164,8 @@ int execute(char **args) {
         }
     }
 
-    pid_t pid, wpid;
+    pid_t pid = fork();
     int status;
-
-    pid = fork();
     if (pid == 0) {
         // Child process
         if (execvp(args[0], args) == -1) {
@@ -181,7 +179,7 @@ int execute(char **args) {
     } else {
         // Parent process
         while (!WIFEXITED(status) && !WIFSIGNALED(status)) {
-            wpid = waitpid(pid, &status, WUNTRACED); // wait child to be exited to return to prompt
+            waitpid(pid, &status, WUNTRACED); // wait child to be exited to return to prompt
         }
     }
 
