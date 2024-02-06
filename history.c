@@ -17,6 +17,10 @@ void check_history_file() {
         // fallback to $HOME if $XDG_CONFIG_HOME is null
         env_home = getenv("HOME");
     }
+    if (env_home == NULL) {
+        fprintf(stderr, "rush: HOME AND XDG_CONFIG_HOME environment variable is missing\n");
+        exit(EXIT_FAILURE);
+    }
     int env_home_len = strlen(env_home);
     int histfilename_len = strlen(HISTFILE);
     int path_len = env_home_len + histfilename_len + 2; // 2 for slash and null byte

@@ -47,6 +47,10 @@ int num_builtins() {
 int cd(char **args) {
     if (args[1] == NULL) {
         char *home = getenv("HOME");
+        if (home == NULL) {
+            fprintf(stderr, "rush: HOME environment variable is missing\n");
+            exit(EXIT_FAILURE);
+        }
         if (chdir(home) != 0) {
             perror("rush");
         }
@@ -171,14 +175,14 @@ int execute(char **args) {
                 fprintf(stderr, "rush: command not found: %s\n", args[0]);
             }
         }
-        exit(EXIT_FAILURE);
+        exit(EXIT_FAILURE); // exit the child
     } else if (pid < 0) {
-        perror("Cannot fork");
+        perror("fork failed");
     } else {
         // Parent process
-        do {
-            wpid = waitpid(pid, &status, WUNTRACED);
-        } while (!WIFEXITED(status) && !WIFSIGNALED(status));
+        while (!WIFEXITED(status) && !WIFSIGNALED(status)) {
+            wpid = waitpid(pid, &status, WUNTRACED); // wait child to be exited to return to prompt
+        }
     }
 
     return 1;
