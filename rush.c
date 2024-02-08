@@ -69,7 +69,7 @@ char **setup_path_variable() {
 }
 
 bool find_command(char **paths, char *command) {
-    if (strcmp(command, "") == 0) {
+    if (strncmp(command, "", 1) == 0) {
         return false;
     }
     while (*paths != NULL) {
@@ -97,6 +97,56 @@ void shiftright(int chars) {
     printf("\033[%dC", chars);
 }
 
+void clearline() {
+    printf("\033[K"); // clear line to the right of cursor
+}
+
+void highlight(char *buffer, char **paths) {
+    char *cmd_part = strchr(buffer, ' ');
+    char *command_without_arg = NULL;
+    int cmd_len = 0;
+    bool valid;
+
+    if (cmd_part != NULL) {
+        cmd_len = cmd_part - buffer;
+        char *cmd = malloc(sizeof(char) * (cmd_len + 1));
+        command_without_arg = malloc(sizeof(char) * (cmd_len + 1));
+        if (cmd == NULL || command_without_arg == NULL) {
+            fprintf(stderr, "rush: Error allocating memory\n");
+            exit(EXIT_FAILURE);
+        }
+        for (int i = 0; i < (cmd_part - buffer); i++) {
+            cmd[i] = buffer[i];
+        }
+        strcpy(command_without_arg, cmd);
+        cmd[cmd_len] = '\0';
+        command_without_arg[cmd_len] = '\0';
+        valid = find_command(paths, cmd);
+        free(cmd);
+    } else {
+        valid = find_command(paths, buffer);
+    }
+
+    if (valid) {
+        if (command_without_arg != NULL) {
+            buffer += cmd_len;
+            printf("\x1b[38;2;137;180;250m%s\x1b[0m\x1b[38;2;255;255;255m%s\x1b[0m", command_without_arg, buffer); // print green as valid command, but only color the command, not the arguments
+            buffer -= cmd_len;
+        } else {
+            printf("\x1b[38;2;137;180;250m%s\x1b[0m", buffer); // print green as valid command
+        }
+    } else {
+        if (command_without_arg != NULL) {
+            buffer += cmd_len;
+            printf("\x1b[38;2;243;139;168m%s\x1b[0m\x1b[38;2;255;255;255m%s\x1b[0m", command_without_arg, buffer); // print green as valid command, but only color the command, not the arguments
+            buffer -= cmd_len;
+        } else {
+            printf("\x1b[38;2;243;139;168m%s\x1b[0m", buffer); // print red as invalid command
+        }
+    }
+    free(command_without_arg);
+}
+
 char *readline(char **paths) {
     int bufsize = RL_BUFSIZE;
     int position = 0;
@@ -106,6 +156,7 @@ char *readline(char **paths) {
     bool backspaced = false;
     bool navigated = false;
     bool insertatmiddle = false;
+    bool replaced = false;
     if (!buffer) {
         fprintf(stderr, "rush: Error allocating memory\n");
         exit(EXIT_FAILURE);
@@ -125,15 +176,39 @@ char *readline(char **paths) {
                 if (buf_len == 0) {
                     break;
                 }
-                buffer[buf_len] = '\0';
-                // clear all characters after the command
-                for (int start = buf_len + 1; buffer[start] != '\0'; start++) {
-                    buffer[start] = '\0';
+                // check if command includes !!
+                if (strstr(buffer, "!!") != NULL) {
+                    char *last_command = read_command(1);
+                    if (last_command != NULL) {
+                        // replace !! with the last command
+                        char *replace = strstr(buffer, "!!");
+                        int replace_len = strlen(replace);
+                        int last_command_len = strlen(last_command);
+                        int buffer_len = strlen(buffer);
+                        if (last_command_len > replace_len) {
+                            buffer = realloc(buffer, buffer_len + last_command_len - replace_len + 1);
+                            if (!buffer) {
+                                fprintf(stderr, "rush: Error allocating memory\n");
+                                exit(EXIT_FAILURE);
+                            }
+                        }
+                        memmove(replace + last_command_len, replace + replace_len, buffer_len - (replace - buffer) - replace_len + 1);
+                        memcpy(replace, last_command, last_command_len);
+                        position += last_command_len - replace_len;
+                        shiftright(last_command_len - replace_len);
+                        replaced = true;
+                        break;
+                    }
+                } else {
+                    buffer[buf_len] = '\0';
+                    // clear all characters after the command
+                    for (int start = buf_len + 1; buffer[start] != '\0'; start++) {
+                        buffer[start] = '\0';
+                    }
+                    printf("\n"); // give space for response
+                    position = 0;
+                    return buffer;
                 }
-                printf("\n"); // give space for response
-                save_command_history(buffer);
-                position = 0;
-                return buffer;
             }
             case 127: // backspace
                 if (buf_len >= 1) {
@@ -154,16 +229,16 @@ char *readline(char **paths) {
                         char *last_command = read_command(1);
                         if (last_command != NULL) {
                             strcpy(buffer, last_command);
-                            navigated = true;
                         }
+                        navigated = true;
                         moved = false;
                         break;
                     } else if (arrow_key == 66) { // down
                         char *last_command = read_command(0);
                         if (last_command != NULL) {
                             strcpy(buffer, last_command);
-                            navigated = true;
                         }
+                        navigated = true;
                         moved = false;
                         break;
                     } else if (arrow_key == 67) { // right
@@ -200,18 +275,28 @@ char *readline(char **paths) {
                     position++;
                 }
         }
-        if (navigated && buf_len >= 1) {
-            if (position != 0) {
-                shiftleft(buf_len);  // move cursor to the beginning
-                printf("\033[K"); // clear line to the right of cursor
-            }
-        }
+
         buf_len = strlen(buffer);
+
+        if (replaced) {
+            shiftleft(buf_len);
+            clearline();
+        }
+
+        if (navigated && buf_len >= 1) {
+            if (position > 0) {
+                shiftleft(position);  // move cursor to the beginning
+                clearline();
+            }
+            position = buf_len;
+        }
+
         if (moved) {
             moved = false;
             continue;
         }
-        if (!navigated) {
+
+        if (!navigated && !replaced) {
             if (position != buf_len) {
                 // not at normal place
                 if (backspaced) {
@@ -234,54 +319,13 @@ char *readline(char **paths) {
                     shiftleft(1);    
                 }
             }
-            printf("\033[K"); // clear line to the right of cursor
+            clearline();
         } else {
             navigated = false;
         }
-        char *cmd_part = strchr(buffer, ' ');
-        char *command_without_arg = NULL;
-        int cmd_len = 0;
-        bool valid;
 
-        if (cmd_part != NULL) {
-            cmd_len = cmd_part - buffer;
-            char *cmd = malloc(sizeof(char) * (cmd_len + 1));
-            command_without_arg = malloc(sizeof(char) * (cmd_len + 1));
-            if (cmd == NULL || command_without_arg == NULL) {
-                fprintf(stderr, "rush: Error allocating memory\n");
-                exit(EXIT_FAILURE);
-            }
-            for (int i = 0; i < (cmd_part - buffer); i++) {
-                cmd[i] = buffer[i];
-            }
-            strcpy(command_without_arg, cmd);
-            cmd[cmd_len] = '\0';
-            command_without_arg[cmd_len] = '\0';
-            valid = find_command(paths, cmd);
-            free(cmd);
-        } else {
-            valid = find_command(paths, buffer);
-        }
+        highlight(buffer, paths);
 
-        if (valid) {
-            if (command_without_arg != NULL) {
-                buffer += cmd_len;
-                printf("\x1b[38;2;137;180;250m%s\x1b[0m\x1b[38;2;255;255;255m%s\x1b[0m", command_without_arg, buffer); // print green as valid command, but only color the command, not the arguments
-                buffer -= cmd_len;
-            } else {
-                printf("\x1b[38;2;137;180;250m%s\x1b[0m", buffer); // print green as valid command
-            }
-        } else {
-            if (command_without_arg != NULL) {
-                buffer += cmd_len;
-                printf("\x1b[38;2;243;139;168m%s\x1b[0m\x1b[38;2;255;255;255m%s\x1b[0m", command_without_arg, buffer); // print green as valid command, but only color the command, not the arguments
-                buffer -= cmd_len;
-            } else {
-                printf("\x1b[38;2;243;139;168m%s\x1b[0m", buffer); // print red as invalid command
-            }
-        }
-        free(command_without_arg);
-        
         if (backspaced) {
             if (buf_len != position) {
                 shiftleft(buf_len - position);
@@ -291,8 +335,11 @@ char *readline(char **paths) {
         if (insertatmiddle) {
             shiftleft(buf_len - position); // move cursor back to where it was
             insertatmiddle = false;
-
         }
+        if (replaced) {
+            replaced = false;
+        }
+
         // If we have exceeded the buffer, reallocate.
         if ((buf_len + 1) >= bufsize) {
             bufsize += RL_BUFSIZE;
@@ -332,13 +379,21 @@ char **argsplit(char *line) {
 
         token = strtok(NULL, TOK_DELIM);
     }
-    // makes ls and diff have color without user typing it
-    if (strcmp(tokens[0], "ls") == 0 || strcmp(tokens[0], "diff") == 0) {
-        tokens[position] = "--color=auto";
-    }
-    position++;
     tokens[position] = NULL;
     return tokens;
+}
+
+char **modifyargs(char **args) {
+    int num_arg = 0;
+
+    // makes ls and diff have color without user typing it
+    if (strncmp(args[0], "ls", 2) == 0 || strncmp(args[0], "diff", 4) == 0) {
+        args[num_arg] = "--color=auto";
+        num_arg++;
+        args[num_arg] = NULL;
+    }
+
+    return args;
 }
 
 // continously prompt for command and execute it
@@ -371,6 +426,7 @@ void command_loop(char **paths) {
 
         line = readline(paths);
         args = argsplit(line);
+        args = modifyargs(args);
         status = execute(args);
 
         free(line);

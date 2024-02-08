@@ -6,10 +6,11 @@
 #include <errno.h>
 #include <sys/wait.h>
 
-#include "commands.h"
 #include "constants.h"
 #include "history.h"
 #include "rush.h"
+
+int execute(char **args);
 
 // Function declarations for builtin commands
 int cd(char **args);
@@ -81,7 +82,7 @@ int quit(char **args) {
 }
 
 int history(char **args) {
-    char **history = get_all_history();
+    char **history = get_all_history(true);
 
     for (int i = 0; history[i] != NULL; ++i) {
         printf("%s\n", history[i]);
@@ -158,17 +159,24 @@ int execute(char **args) {
         return 1;
     }
     
+    save_command_history(args); // save command to history file
+
     // prioritize builtin commands
     for (int i = 0; i < num_builtins(); i++) {
         if (strcmp(args[0], builtin_cmds[i]) == 0) {
             return (*builtin_func[i])(args);
         }
     }
-    /*
-    while (*args) {
-        
+    
+    int num_arg = 0;
+
+    while (*args != NULL) {
+        num_arg++; // count number of args
+        args++;
     }
-    */
+
+    args -= num_arg;
+
     pid_t pid;
 
     int status;

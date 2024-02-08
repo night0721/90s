@@ -1,9 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 #include <unistd.h>
 #include <linux/limits.h>
 
+#include "history.h"
 #include "constants.h"
 
 FILE *history_file;
@@ -26,8 +28,8 @@ void check_history_file() {
     int path_len = env_home_len + histfilename_len + 2; // 2 for slash and null byte
     histfile_path = malloc(sizeof(char) * path_len);
     if (histfile_path == NULL) {
-            fprintf(stderr, "rush: Error allocating memory\n");
-            exit(EXIT_FAILURE);
+        fprintf(stderr, "rush: Error allocating memory\n");
+        exit(EXIT_FAILURE);
     }
     histfile_path[0] = '\0'; // initialise string
     // concatenate home and history file name to a path
@@ -45,36 +47,26 @@ void check_history_file() {
     }
 }
 
-void save_command_history(char *command) {
+void save_command_history(char **args) {
     history_file = fopen(histfile_path, "a+");
     if (history_file == NULL) {
         fprintf(stderr, "rush: Error opening history file\n");
         exit(EXIT_FAILURE);
     }
-    int cmd_len = strlen(command);
-    command[cmd_len] = '\n'; // put new line feed to split commands
+    char cmd[RL_BUFSIZE];
+    cmd[0] = '\0';
+    for (int i = 0; args[i] != NULL; ++i) {
+        strcat(cmd, args[i]);
+        strcat(cmd, " ");
+    }
+    int cmd_len = strlen(cmd);
+    cmd[cmd_len] = '\n'; // put new line feed to split commands
     // ptr to first obj, size of each obj, number of obj, file ptr
-    fwrite(command, sizeof(char), cmd_len + 1, history_file);
+    fwrite(cmd, sizeof(char), cmd_len + 1, history_file);
     fclose(history_file);
 }
 
 char *read_command(int direction) {
-    history_file = fopen(histfile_path, "rb"); // read binary mode
-    if (history_file == NULL) {
-        fprintf(stderr, "rush: Error opening history file\n");
-        exit(EXIT_FAILURE);
-    }
-    // normal bufsize is 1024, we serach for 1025 bytes for new line feed
-    int search_len = RL_BUFSIZE + 1;
-    char search[search_len];
-    fseek(history_file, -search_len, SEEK_END); // go back 1025 characters from end of file
-    int count = fread(search, 1, search_len - 1, history_file); // try to read 1025 characters from file, returning count number of bytes
-    search[count] = '\0';
-    char *last_nlf = strrchr(search, '\n'); // locate last occurence of \n in a searching string
-    if (last_nlf == NULL) {
-        // no history
-        return NULL;
-    }
     if (direction == 1) { // up
         cmd_count++;
     } else { // down
@@ -84,24 +76,18 @@ char *read_command(int direction) {
             cmd_count--;
         }
     }
-    for (int i = 0; i < cmd_count; i++) {
-        search[last_nlf - search] = '\0'; // terminate string earlier to find second last \n, search points to first char and last_nlf is last \n, difference is the index of \n
-        last_nlf = strrchr(search, '\n'); // call strrchr 2 times to get second last new line feed in search string as every life is new line feed
-        if ((last_nlf - search) == (strchr(search, '\n') - search)) {
-            // check if the first \n is the last \n we searching for, if yes it is first command
-            cmd_count--;
-            search[last_nlf - search] = '\0'; // terminate string earlier to find second last \n, search points to first char and last_nlf is last \n, difference is the index of \n
-            char *first_cmd = malloc(sizeof(char) * (last_nlf - search) + 1);
-            if (first_cmd == NULL) {
-                fprintf(stderr, "rush: Error allocating memory\n");
-                exit(EXIT_FAILURE);
-            }
-            strcpy(first_cmd, search);
-            return first_cmd;
-        }
+    char **history = get_all_history(false);
+    int num_history = 0;
+    while (*history != NULL) {
+        num_history++;
+        history++;
     }
-    fclose(history_file);
-    return last_nlf + 1; // return the string from the new line feed
+    if (cmd_count > num_history) {
+        cmd_count = num_history;
+        return NULL;
+    }
+    history -= num_history;
+    return history[num_history - cmd_count];
 }
 
 int is_duplicate(char **history, int line_count, char *line) {
@@ -113,7 +99,7 @@ int is_duplicate(char **history, int line_count, char *line) {
     return 0;
 }
 
-char **get_all_history() {
+char **get_all_history(bool check) {
     history_file = fopen(histfile_path, "r");
     if (history_file == NULL) {
         fprintf(stderr, "rush: Error opening history file\n");
@@ -130,7 +116,20 @@ char **get_all_history() {
 
     while (fgets(buffer, sizeof(buffer), history_file) != NULL) {
         buffer[strcspn(buffer, "\n")] = '\0';
-        if (!is_duplicate(history, line_count, buffer)) {
+        if (check) {
+            if (!is_duplicate(history, line_count, buffer)) {
+                history[line_count] = strdup(buffer);
+                if (history[line_count] == NULL) {
+                    fprintf(stderr, "Error allocating memory\n");
+                    exit(EXIT_FAILURE);
+                }
+                line_count++;
+                if (line_count >= MAX_HISTORY) {
+                    fprintf(stderr, "Maximum number of lines reached.\n");
+                    exit(EXIT_FAILURE);
+                }
+            }
+        } else {
             history[line_count] = strdup(buffer);
             if (history[line_count] == NULL) {
                 fprintf(stderr, "Error allocating memory\n");
@@ -141,7 +140,7 @@ char **get_all_history() {
                 fprintf(stderr, "Maximum number of lines reached.\n");
                 exit(EXIT_FAILURE);
             }
-        } 
+        }
     }
 
     fclose(history_file);
