@@ -32,7 +32,6 @@ void change_terminal_attribute(int option) {
 char **setup_path_variable() {
     char *envpath = getenv("PATH");
     if (envpath == NULL) {
-        // ?????
         fprintf(stderr, "rush: PATH environment variable is missing\n");
         exit(EXIT_FAILURE);
     }
@@ -75,6 +74,7 @@ bool find_command(char **paths, char *command) {
     }
     while (*paths != NULL) {
         char current_path[PATH_MAX];
+        current_path[0] = '\0';
         sprintf(current_path, "%s/%s", *paths, command);
         if (access(current_path, X_OK) == 0) {
             // command is executable
@@ -89,12 +89,23 @@ bool find_command(char **paths, char *command) {
     return false;
 }
 
+void shiftleft(int chars) {
+    printf("\033[%dD", chars);
+}
+
+void shiftright(int chars) {
+    printf("\033[%dC", chars);
+}
+
 char *readline(char **paths) {
     int bufsize = RL_BUFSIZE;
     int position = 0;
     char *buffer = malloc(sizeof(char) * bufsize);
-    int c;
 
+    bool moved = false;
+    bool backspaced = false;
+    bool navigated = false;
+    bool insertatmiddle = false;
     if (!buffer) {
         fprintf(stderr, "rush: Error allocating memory\n");
         exit(EXIT_FAILURE);
@@ -102,17 +113,15 @@ char *readline(char **paths) {
 
     buffer[0] = '\0';
     while (1) {
-        c = getchar(); // read a character
+        int c = getchar(); // read a character
         int buf_len = strlen(buffer);
-        if (buf_len > 0) {
-            printf("\033[%ldD", strlen(buffer));  // move cursor to the beginning
-            printf("\033[K"); // clear line to the right of cursor
-        }
+        
         // check each character user has input
         switch (c) {
             case EOF:
                 exit(EXIT_SUCCESS);
-            case 10: // enter/new line feed
+            case 10: {
+                // enter/new line feed
                 if (buf_len == 0) {
                     break;
                 }
@@ -121,12 +130,20 @@ char *readline(char **paths) {
                 for (int start = buf_len + 1; buffer[start] != '\0'; start++) {
                     buffer[start] = '\0';
                 }
-                printf("%s\n", buffer); // print back the command in prompt
+                printf("\n"); // give space for response
                 save_command_history(buffer);
+                position = 0;
                 return buffer;
+            }
             case 127: // backspace
                 if (buf_len >= 1) {
-                    buffer[buf_len - 1] = '\0'; // putting null character at last character to act as backspace
+                    position--;
+                    for (int i = position; i < buf_len; i++) {
+                        // shift the buffer
+                        buffer[i] = buffer[i + 1];
+                    }
+                    backspaced = true;
+                    moved = false;
                 }
                 break;
             case 27: // arrow keys comes at three characters, 27, 91, then 65-68
@@ -137,44 +154,89 @@ char *readline(char **paths) {
                         char *last_command = read_command(1);
                         if (last_command != NULL) {
                             strcpy(buffer, last_command);
-                            buf_len = strlen(buffer) - 1;
+                            navigated = true;
                         }
+                        moved = false;
                         break;
                     } else if (arrow_key == 66) { // down
                         char *last_command = read_command(0);
                         if (last_command != NULL) {
                             strcpy(buffer, last_command);
-                            buf_len = strlen(buffer) - 1;
+                            navigated = true;
                         }
+                        moved = false;
                         break;
                     } else if (arrow_key == 67) { // right
                         if (position < buf_len) {
-                            printf("\033[%dC", 1); // move cursor right
+                            shiftright(1);
                             position++;
                         }
+                        moved = true;
+                        break;
                     } else if (arrow_key == 68) { // left
-                        if (position > 0) {
-                            printf("\033[%dD", 1); // move cursor right
+                        if (position >= 1) {
+                            shiftleft(1);
                             position--;
                         }
-                    }                }
+                        moved = true;
+                        break;
+                    } 
+                }
             default:
                 if (c > 31 && c < 127) {
                     if (position == buf_len) {
                         // Append character to the end of the buffer
                         buffer[buf_len] = c;
                         buffer[buf_len + 1] = '\0';
+                        moved = false;
+                        navigated = false;
                     } else {
                         // Insert character at the current position
                         memmove(&buffer[position + 1], &buffer[position], buf_len - position + 1);
                         buffer[position] = c;
-                        printf("\033[s"); // Save cursor position
-                        printf("%s", &buffer[position]); // Print from the current position
-                        printf("\033[u"); // Restore cursor position
-                        printf("\033[%dC", 1); // move cursor right by one place
+                        shiftright(1);
+                        insertatmiddle = true;
                     }
                     position++;
                 }
+        }
+        if (navigated && buf_len >= 1) {
+            if (position != 0) {
+                shiftleft(buf_len);  // move cursor to the beginning
+                printf("\033[K"); // clear line to the right of cursor
+            }
+        }
+        buf_len = strlen(buffer);
+        if (moved) {
+            moved = false;
+            continue;
+        }
+        if (!navigated) {
+            if (position != buf_len) {
+                // not at normal place
+                if (backspaced) {
+                    shiftleft(position + 1);
+                } else {
+                    shiftleft(position);  // move cursor to the beginning
+                }
+            } else if (buf_len > 1) {
+                if (backspaced) {
+                    shiftleft(buf_len + 1);  // move cursor to the beginning
+                } else {
+                    shiftleft(buf_len - 1);  // move cursor to the beginning
+                }
+            } else if (buf_len == 1) {
+                if (backspaced) {
+                    shiftleft(2);
+                }
+            } else if (buf_len == 0) {
+                if (backspaced) {
+                    shiftleft(1);    
+                }
+            }
+            printf("\033[K"); // clear line to the right of cursor
+        } else {
+            navigated = false;
         }
         char *cmd_part = strchr(buffer, ' ');
         char *command_without_arg = NULL;
@@ -183,8 +245,8 @@ char *readline(char **paths) {
 
         if (cmd_part != NULL) {
             cmd_len = cmd_part - buffer;
-            char *cmd = malloc(sizeof(char) * cmd_len + 1);
-            command_without_arg = malloc(sizeof(char) * cmd_len + 1);
+            char *cmd = malloc(sizeof(char) * (cmd_len + 1));
+            command_without_arg = malloc(sizeof(char) * (cmd_len + 1));
             if (cmd == NULL || command_without_arg == NULL) {
                 fprintf(stderr, "rush: Error allocating memory\n");
                 exit(EXIT_FAILURE);
@@ -196,6 +258,7 @@ char *readline(char **paths) {
             cmd[cmd_len] = '\0';
             command_without_arg[cmd_len] = '\0';
             valid = find_command(paths, cmd);
+            free(cmd);
         } else {
             valid = find_command(paths, buffer);
         }
@@ -214,11 +277,22 @@ char *readline(char **paths) {
                 printf("\x1b[38;2;243;139;168m%s\x1b[0m\x1b[38;2;255;255;255m%s\x1b[0m", command_without_arg, buffer); // print green as valid command, but only color the command, not the arguments
                 buffer -= cmd_len;
             } else {
-                printf("\x1b[38;2;243;139;168m%s\x1b[0m", buffer); // print red as sinvalid command
+                printf("\x1b[38;2;243;139;168m%s\x1b[0m", buffer); // print red as invalid command
             }
         }
-        fflush(stdout);
+        free(command_without_arg);
+        
+        if (backspaced) {
+            if (buf_len != position) {
+                shiftleft(buf_len - position);
+            }
+            backspaced = false;
+        }
+        if (insertatmiddle) {
+            shiftleft(buf_len - position); // move cursor back to where it was
+            insertatmiddle = false;
 
+        }
         // If we have exceeded the buffer, reallocate.
         if ((buf_len + 1) >= bufsize) {
             bufsize += RL_BUFSIZE;
@@ -317,6 +391,7 @@ int main(int argc, char **argv) {
     command_loop(paths);
 
     // cleanup
+    free(paths);
     change_terminal_attribute(0); // change back to default settings
     return EXIT_SUCCESS;
 }   
