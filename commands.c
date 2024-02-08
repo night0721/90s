@@ -157,16 +157,22 @@ int execute(char **args) {
     if (args[0] == NULL) { // An empty command was entered.
         return 1;
     }
-
+    
+    // prioritize builtin commands
     for (int i = 0; i < num_builtins(); i++) {
         if (strcmp(args[0], builtin_cmds[i]) == 0) {
             return (*builtin_func[i])(args);
         }
     }
+    /*
+    while (*args) {
+        
+    }
+    */
+    pid_t pid;
 
-    pid_t pid = fork();
     int status;
-    if (pid == 0) {
+    if ((pid = fork()) == 0) {
         // Child process
         if (execvp(args[0], args) == -1) {
             if (errno == ENOENT) {
@@ -178,9 +184,9 @@ int execute(char **args) {
         perror("fork failed");
     } else {
         // Parent process
-        while (!WIFEXITED(status) && !WIFSIGNALED(status)) {
+        do {
             waitpid(pid, &status, WUNTRACED); // wait child to be exited to return to prompt
-        }
+        } while (!WIFEXITED(status) && !WIFSIGNALED(status)); 
     }
 
     return 1;
