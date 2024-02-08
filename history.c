@@ -25,11 +25,16 @@ void check_history_file() {
     int histfilename_len = strlen(HISTFILE);
     int path_len = env_home_len + histfilename_len + 2; // 2 for slash and null byte
     histfile_path = malloc(sizeof(char) * path_len);
+    if (histfile_path == NULL) {
+            fprintf(stderr, "rush: Error allocating memory\n");
+            exit(EXIT_FAILURE);
+    }
+    histfile_path[0] = '\0'; // initialise string
     // concatenate home and history file name to a path
     strcat(histfile_path, env_home);
     strcat(histfile_path, "/");
     strcat(histfile_path, HISTFILE);
-    histfile_path[path_len] = '\0';
+    histfile_path[path_len - 1] = '\0';
     if (access(histfile_path, F_OK) != 0) { // check for file existence
         history_file = fopen(histfile_path, "w"); // read and write, if doesn't exist, create
         if (history_file == NULL) {
@@ -87,6 +92,10 @@ char *read_command(int direction) {
             cmd_count--;
             search[last_nlf - search] = '\0'; // terminate string earlier to find second last \n, search points to first char and last_nlf is last \n, difference is the index of \n
             char *first_cmd = malloc(sizeof(char) * (last_nlf - search) + 1);
+            if (first_cmd == NULL) {
+                fprintf(stderr, "rush: Error allocating memory\n");
+                exit(EXIT_FAILURE);
+            }
             strcpy(first_cmd, search);
             return first_cmd;
         }
