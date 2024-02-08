@@ -30,6 +30,7 @@ $ ./rush
 - Export environment variable
 - Source commands from a file
 - Editing using left and right arrow keys
+- !! to repeat last command
 
 # Built in commands
 - cd
@@ -44,7 +45,6 @@ $ ./rush
 - stdin, stdout, stderr redirect
 - background jobs
 - tab completion
-- Recalling history through `!` & ~ `!-`
 
 # Credits
 - [Tutorial - Write a shell in C](https://brennan.io/2015/01/16/write-a-shell-in-c/)
