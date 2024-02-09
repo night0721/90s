@@ -206,21 +206,21 @@ int execute_pipe(char ***args) {
     int i = 0;
     int in = 0;
 
-    int num_pipes = 0;
-    while (args[num_pipes] != NULL) {
-        num_pipes++;
+    int num_cmds = 0;
+    while (args[num_cmds] != NULL) {
+        num_cmds++;
     }
-
-    for (i = 0; i < num_pipes; i++) {
+    
+    for (int i = 0; i < num_cmds - 1; i++) {
         pipe(pipefd);
         if ((pid = fork()) == 0) {
             dup2(in, 0); // change input according to the old one
-            if (i < num_pipes - 1) {
-                dup2(pipefd[1], 1); // change output according to the new one
+            if (i < num_cmds - 1) {
+                dup2(pipefd[1], 1); // change output to the input of the next command
             }
             close(pipefd[0]);
-            execvp(args[i][0], args[i]);
-            exit(EXIT_FAILURE);
+            status = execute(args[i]);
+            exit(status);
         } else if (pid < 0) {
             perror("fork failed");
         }
@@ -230,18 +230,21 @@ int execute_pipe(char ***args) {
 
     if ((pid = fork()) == 0) {
         dup2(in, 0);
-        execvp(args[i][0], args[i]);
-        exit(EXIT_FAILURE);
+        status = execute(args[num_cmds - 1]);
+        exit(status);
     } else if (pid < 0) {
         perror("fork failed");
     }
 
-    close(pipefd[0]);
-    close(pipefd[1]);
-
-    for (i = 0; i <= num_pipes; i++) {
+    close(in);
+    for (int i = 0; i < num_cmds; i++) {
         wait(&status);
     }
+
+
+
+
+
 
     return 1;
 }

@@ -390,7 +390,7 @@ char **modifyargs(char **args) {
     while (args[num_arg] != NULL) {
         num_arg++;
     }
-    // makes ls and diff have color without user typing it
+    // makes ls and diff and grep have color without user typing it
     if (strncmp(args[0], "ls", 2) == 0 || strncmp(args[0], "diff", 4) == 0 || strncmp(args[0], "grep", 4) == 0) {
         args[num_arg] = "--color=auto";
         num_arg++;
