@@ -7,6 +7,7 @@
 #include <time.h>
 #include <stdbool.h>
 #include <signal.h>
+#include <ctype.h>
 
 #include "color.h"
 #include "constants.h"
@@ -386,14 +387,60 @@ char **argsplit(char *line) {
 char **modifyargs(char **args) {
     int num_arg = 0;
 
+    while (args[num_arg] != NULL) {
+        num_arg++;
+    }
     // makes ls and diff have color without user typing it
-    if (strncmp(args[0], "ls", 2) == 0 || strncmp(args[0], "diff", 4) == 0) {
+    if (strncmp(args[0], "ls", 2) == 0 || strncmp(args[0], "diff", 4) == 0 || strncmp(args[0], "grep", 4) == 0) {
         args[num_arg] = "--color=auto";
         num_arg++;
         args[num_arg] = NULL;
     }
 
     return args;
+}
+
+char *trimws(char *str) {
+	char *end;
+	while (isspace((unsigned char) *str))
+        str++;
+	if(*str == 0)
+		return str;
+	end = str + strlen(str) - 1;
+	while (end > str && isspace((unsigned char) *end))
+        end--;
+	*(end+1) = 0;
+	return str;
+}
+
+char ***pipe_argsplit(char *line) {
+    char ***cmdv = malloc(sizeof(char **) * 128); // 127 commands, 1 for NULL
+    if (cmdv == NULL) {
+        fprintf(stderr, "rush: Error allocating memory\n");
+        exit(EXIT_FAILURE);
+    }
+    char **cmds = malloc(sizeof(char *) * 128); // 127 arguments, 1 for NULL
+    if (cmds == NULL) {
+        fprintf(stderr, "rush: Error allocating memory\n");
+        exit(EXIT_FAILURE);
+    }
+    int num_arg = 0;
+    char *pipe = strtok(line, "|");
+    while (pipe != NULL) {
+        pipe = trimws(pipe);
+        cmds[num_arg] = strdup(pipe);
+        pipe = strtok(NULL, "|");
+        num_arg++;
+    }
+    cmds[num_arg] = NULL;
+
+    for (int i = 0; i < num_arg; i++) {
+        char **splitted = argsplit(cmds[i]);
+        cmdv[i] = modifyargs(splitted);
+    }
+    cmdv[num_arg] = NULL;
+    free(cmds);
+    return cmdv;
 }
 
 // continously prompt for command and execute it
@@ -425,12 +472,28 @@ void command_loop(char **paths) {
 
 
         line = readline(paths);
-        args = argsplit(line);
-        args = modifyargs(args);
-        status = execute(args);
-
+        save_command_history(line);
+        bool has_pipe = false;
+        for (int i = 0; line[i] != '\0'; i++) {
+            if (line[i] == '|') {
+                has_pipe = true;
+                break;
+            }
+        }
+        if (has_pipe) {
+            char ***pipe_args = pipe_argsplit(line);
+            status = execute_pipe(pipe_args);
+            while (*pipe_args != NULL) {
+                free(*pipe_args);
+                pipe_args++;
+            }
+        } else {
+            args = argsplit(line);
+            args = modifyargs(args);
+            status = execute(args);
+            free(args);
+        }
         free(line);
-        free(args);
         free(cwd);
     };
 }

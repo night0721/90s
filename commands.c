@@ -159,8 +159,6 @@ int execute(char **args) {
         return 1;
     }
     
-    save_command_history(args); // save command to history file
-
     // prioritize builtin commands
     for (int i = 0; i < num_builtins(); i++) {
         if (strcmp(args[0], builtin_cmds[i]) == 0) {
@@ -195,6 +193,54 @@ int execute(char **args) {
         do {
             waitpid(pid, &status, WUNTRACED); // wait child to be exited to return to prompt
         } while (!WIFEXITED(status) && !WIFSIGNALED(status)); 
+    }
+
+    return 1;
+}
+
+// execute_pipe with as many pipes as needed
+int execute_pipe(char ***args) {
+    int pipefd[2];
+    int status;
+    pid_t pid;
+    int i = 0;
+    int in = 0;
+
+    int num_pipes = 0;
+    while (args[num_pipes] != NULL) {
+        num_pipes++;
+    }
+
+    for (i = 0; i < num_pipes; i++) {
+        pipe(pipefd);
+        if ((pid = fork()) == 0) {
+            dup2(in, 0); // change input according to the old one
+            if (i < num_pipes - 1) {
+                dup2(pipefd[1], 1); // change output according to the new one
+            }
+            close(pipefd[0]);
+            execvp(args[i][0], args[i]);
+            exit(EXIT_FAILURE);
+        } else if (pid < 0) {
+            perror("fork failed");
+        }
+        close(pipefd[1]);
+        in = pipefd[0];
+    }
+
+    if ((pid = fork()) == 0) {
+        dup2(in, 0);
+        execvp(args[i][0], args[i]);
+        exit(EXIT_FAILURE);
+    } else if (pid < 0) {
+        perror("fork failed");
+    }
+
+    close(pipefd[0]);
+    close(pipefd[1]);
+
+    for (i = 0; i <= num_pipes; i++) {
+        wait(&status);
     }
 
     return 1;

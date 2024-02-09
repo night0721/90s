@@ -26,11 +26,10 @@ $ ./rush
 - Showing current time and directory with custom color
 - Syntax highlighting on valid commands using ANSI colors
 - History navigation using up and down keys with history command
-- Built in commands
-- Export environment variable
-- Source commands from a file
+- Support for environment variables
 - Editing using left and right arrow keys
 - !! to repeat last command
+- Pipes
 
 # Built in commands
 - cd
@@ -41,7 +40,6 @@ $ ./rush
 - source
 
 # Todo Features
-- splits commands based on pipes and whitespaces
 - stdin, stdout, stderr redirect
 - background jobs
 - tab completion

@@ -47,7 +47,7 @@ void check_history_file() {
     }
 }
 
-void save_command_history(char **args) {
+void save_command_history(char *args) {
     history_file = fopen(histfile_path, "a+");
     if (history_file == NULL) {
         fprintf(stderr, "rush: Error opening history file\n");
@@ -55,10 +55,7 @@ void save_command_history(char **args) {
     }
     char cmd[RL_BUFSIZE];
     cmd[0] = '\0';
-    for (int i = 0; args[i] != NULL; ++i) {
-        strcat(cmd, args[i]);
-        strcat(cmd, " ");
-    }
+    strcat(cmd, args);
     int cmd_len = strlen(cmd);
     cmd[cmd_len] = '\n'; // put new line feed to split commands
     // ptr to first obj, size of each obj, number of obj, file ptr
