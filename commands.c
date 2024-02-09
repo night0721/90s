@@ -203,7 +203,6 @@ int execute_pipe(char ***args) {
     int pipefd[2];
     int status;
     pid_t pid;
-    int i = 0;
     int in = 0;
 
     int num_cmds = 0;
@@ -214,22 +213,24 @@ int execute_pipe(char ***args) {
     for (int i = 0; i < num_cmds - 1; i++) {
         pipe(pipefd);
         if ((pid = fork()) == 0) {
-            dup2(in, 0); // change input according to the old one
+            // then this (child)
+            dup2(in, STDIN_FILENO); // get input from previous command
             if (i < num_cmds - 1) {
-                dup2(pipefd[1], 1); // change output to the input of the next command
+                dup2(pipefd[1], STDOUT_FILENO); // make output go to pipe (next output)
             }
-            close(pipefd[0]);
+            close(pipefd[0]); // close original input
             status = execute(args[i]);
             exit(status);
         } else if (pid < 0) {
             perror("fork failed");
         }
-        close(pipefd[1]);
-        in = pipefd[0];
+        // this will be executed first
+        close(pipefd[1]); // close output
+        in = pipefd[0]; // save the input for the next command
     }
 
     if ((pid = fork()) == 0) {
-        dup2(in, 0);
+        dup2(in, STDIN_FILENO); // get input from pipe
         status = execute(args[num_cmds - 1]);
         exit(status);
     } else if (pid < 0) {
@@ -240,11 +241,5 @@ int execute_pipe(char ***args) {
     for (int i = 0; i < num_cmds; i++) {
         wait(&status);
     }
-
-
-
-
-
-
     return 1;
 }
