@@ -23,10 +23,6 @@ void *memalloc(size_t size) {
     return ptr;
 }
 
-void quit_sig(int sig) {
-    exit(0);
-}
-
 void change_terminal_attribute(int option) {  
     static struct termios oldt, newt;
     tcgetattr(STDIN_FILENO, &oldt);
@@ -168,7 +164,7 @@ char *readline(char **paths) {
             case 10: {
                 // enter/new line feed
                 if (buf_len == 0) {
-                    break;
+                    return NULL;
                 }
                 // check if command includes !!
                 if (strstr(buffer, "!!") != NULL) {
@@ -450,16 +446,23 @@ void command_loop(char **paths) {
         }
         char time[256];
         strcpy(time, timestr);
-        color_text(time, lavender); // lavender colored time string
+        char *modtime = memalloc(sizeof(char) * 256);
+        modtime = color_text(time, lavender); // lavender colored time string
         char *cwd = memalloc(sizeof(char) * (PATH_MAX + 2));
         sprintf(cwd, "[%s]", cwdstr);
-        color_text(cwd, pink); // pink colored current directory
-        char arrow[32] = "»";
-        color_text(arrow, blue);
-        printf("%s %s %s ", time, cwd, arrow);
+        cwd = replace_absolute_home(cwd);
+        cwd = color_text(cwd, pink); // pink colored current directory
+        char *arrow = memalloc(sizeof(char) * 32);
+        strcpy(arrow, "»");
+        arrow = color_text(arrow, blue);
+        printf("%s %s %s ", modtime, cwd, arrow);
 
         cmd_count = 0; // upward arrow key resets command count
         line = readline(paths);
+        if (line == NULL) {
+            printf("\n");
+            continue;
+        }
         save_command_history(line);
         bool has_pipe = false;
         for (int i = 0; line[i] != '\0'; i++) {
@@ -482,8 +485,14 @@ void command_loop(char **paths) {
             free(args);
         }
         free(line);
+        free(modtime);
         free(cwd);
+        free(arrow);
     };
+}
+
+void quit_sig(int sig) {
+    exit(EXIT_SUCCESS);
 }
 
 int main(int argc, char **argv) {

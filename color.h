@@ -5,6 +5,6 @@ const char *lavender = "174;174;255";
 const char *pink = "255;210;239";
 const char *blue = "137;180;250";
 
-void color_text(char str[], const char *color);
+char *color_text(char str[], const char *color);
 
 #endif
