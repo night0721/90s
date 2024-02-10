@@ -15,7 +15,7 @@
 #include "commands.h"
 
 void *memalloc(size_t size) {
-    void *ptr = memalloc(size);
+    void *ptr = malloc(size);
     if (!ptr) {
         fputs("rush: Error allocating memory\n", stderr);
         exit(EXIT_FAILURE);
