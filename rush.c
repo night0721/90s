@@ -14,6 +14,15 @@
 #include "history.h"
 #include "commands.h"
 
+void *memalloc(size_t size) {
+    void *ptr = memalloc(size);
+    if (!ptr) {
+        fputs("rush: Error allocating memory\n", stderr);
+        exit(EXIT_FAILURE);
+    }
+    return ptr;
+}
+
 void quit_sig(int sig) {
     exit(0);
 }
@@ -36,12 +45,8 @@ char **setup_path_variable() {
         fprintf(stderr, "rush: PATH environment variable is missing\n");
         exit(EXIT_FAILURE);
     }
-    char *path_cpy = malloc(sizeof(char) * (strlen(envpath) + 1));
-    char *path = malloc(sizeof(char) * (strlen(envpath) + 1));
-    if (path_cpy == NULL || path == NULL) {
-        fprintf(stderr, "rush: Error allocating memory\n");
-        exit(EXIT_FAILURE);
-    }
+    char *path_cpy = memalloc(sizeof(char) * (strlen(envpath) + 1));
+    char *path = memalloc(sizeof(char) * (strlen(envpath) + 1));
     strcpy(path_cpy, envpath);
     strcpy(path, envpath);
     int path_count = 0;
@@ -53,11 +58,7 @@ char **setup_path_variable() {
         path_cpy++;
     }
     path_count += 2; // adding one to be correct and one for terminator
-    char **paths = malloc(sizeof(char *) * path_count);
-    if (paths == NULL) {
-        fprintf(stderr, "rush: Error allocating memory\n");
-        exit(EXIT_FAILURE);
-    }
+    char **paths = memalloc(sizeof(char *) * path_count);
     char *token = strtok(path, ":");
     int counter = 0;
     while (token != NULL) {
@@ -110,12 +111,8 @@ void highlight(char *buffer, char **paths) {
 
     if (cmd_part != NULL) {
         cmd_len = cmd_part - buffer;
-        char *cmd = malloc(sizeof(char) * (cmd_len + 1));
-        command_without_arg = malloc(sizeof(char) * (cmd_len + 1));
-        if (cmd == NULL || command_without_arg == NULL) {
-            fprintf(stderr, "rush: Error allocating memory\n");
-            exit(EXIT_FAILURE);
-        }
+        char *cmd = memalloc(sizeof(char) * (cmd_len + 1));
+        command_without_arg = memalloc(sizeof(char) * (cmd_len + 1));
         for (int i = 0; i < (cmd_part - buffer); i++) {
             cmd[i] = buffer[i];
         }
@@ -151,17 +148,13 @@ void highlight(char *buffer, char **paths) {
 char *readline(char **paths) {
     int bufsize = RL_BUFSIZE;
     int position = 0;
-    char *buffer = malloc(sizeof(char) * bufsize);
+    char *buffer = memalloc(sizeof(char) * bufsize);
 
     bool moved = false;
     bool backspaced = false;
     bool navigated = false;
     bool insertatmiddle = false;
     bool replaced = false;
-    if (!buffer) {
-        fprintf(stderr, "rush: Error allocating memory\n");
-        exit(EXIT_FAILURE);
-    }
 
     buffer[0] = '\0';
     while (1) {
@@ -356,13 +349,8 @@ char *readline(char **paths) {
 // split line into arguments
 char **argsplit(char *line) {
     int bufsize = TOK_BUFSIZE, position = 0;
-    char **tokens = malloc(bufsize * sizeof(char*));
+    char **tokens = memalloc(bufsize * sizeof(char*));
     char *token;
-
-    if (!tokens) {
-        fprintf(stderr, "rush: Error allocating memory\n");
-        exit(EXIT_FAILURE);
-    }
 
     token = strtok(line, TOK_DELIM);
     while (token != NULL) {
@@ -387,14 +375,21 @@ char **argsplit(char *line) {
 char **modifyargs(char **args) {
     int num_arg = 0;
 
+    // check if command is ls, diff, or grep, if so, add --color=auto to the arguments
+    // this is to make ls, diff, and grep have color without user typing it
+    // this is to make the shell more user friendly
     while (args[num_arg] != NULL) {
         num_arg++;
     }
-    // makes ls and diff and grep have color without user typing it
-    if (strncmp(args[0], "ls", 2) == 0 || strncmp(args[0], "diff", 4) == 0 || strncmp(args[0], "grep", 4) == 0) {
-        args[num_arg] = "--color=auto";
-        num_arg++;
-        args[num_arg] = NULL;
+    for (int i = 0; i < num_arg; i++) {
+        // makes ls and diff and grep have color without user typing it
+        if (strncmp(args[i], "ls", 2) == 0 || strncmp(args[i], "diff", 4) == 0 || strncmp(args[i], "grep", 4) == 0) {
+            for (int j = num_arg; j > i; j--) {
+                args[j + 1] = args[j];
+            }
+            args[i + 1] = "--color=auto";
+            num_arg++;
+        }
     }
 
     return args;
@@ -414,16 +409,8 @@ char *trimws(char *str) {
 }
 
 char ***pipe_argsplit(char *line) {
-    char ***cmdv = malloc(sizeof(char **) * 128); // 127 commands, 1 for NULL
-    if (cmdv == NULL) {
-        fprintf(stderr, "rush: Error allocating memory\n");
-        exit(EXIT_FAILURE);
-    }
-    char **cmds = malloc(sizeof(char *) * 128); // 127 arguments, 1 for NULL
-    if (cmds == NULL) {
-        fprintf(stderr, "rush: Error allocating memory\n");
-        exit(EXIT_FAILURE);
-    }
+    char ***cmdv = memalloc(sizeof(char **) * 128); // 127 commands, 1 for NULL
+    char **cmds = memalloc(sizeof(char *) * 128); // 127 arguments, 1 for NULL
     int num_arg = 0;
     char *pipe = strtok(line, "|");
     while (pipe != NULL) {
@@ -437,6 +424,7 @@ char ***pipe_argsplit(char *line) {
     for (int i = 0; i < num_arg; i++) {
         char **splitted = argsplit(cmds[i]);
         cmdv[i] = modifyargs(splitted);
+
     }
     cmdv[num_arg] = NULL;
     free(cmds);
@@ -463,14 +451,14 @@ void command_loop(char **paths) {
         char time[256];
         strcpy(time, timestr);
         color_text(time, lavender); // lavender colored time string
-        char *cwd = malloc(sizeof(char) * (PATH_MAX + 2));
+        char *cwd = memalloc(sizeof(char) * (PATH_MAX + 2));
         sprintf(cwd, "[%s]", cwdstr);
         color_text(cwd, pink); // pink colored current directory
         char arrow[32] = "»";
         color_text(arrow, blue);
         printf("%s %s %s ", time, cwd, arrow);
 
-
+        cmd_count = 0; // upward arrow key resets command count
         line = readline(paths);
         save_command_history(line);
         bool has_pipe = false;
@@ -490,7 +478,7 @@ void command_loop(char **paths) {
         } else {
             args = argsplit(line);
             args = modifyargs(args);
-            status = execute(args);
+            status = execute(args, STDOUT_FILENO, OPT_FGJ);
             free(args);
         }
         free(line);

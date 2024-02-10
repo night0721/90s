@@ -6,12 +6,21 @@
 #include <linux/limits.h>
 
 #include "history.h"
+#include "rush.h"
 #include "constants.h"
 
 FILE *history_file;
 char *histfile_path;
 int cmd_count = 0;
 
+FILE *open_history_file(char *mode) {
+    history_file = fopen(histfile_path, mode);
+    if (history_file == NULL) {
+        fprintf(stderr, "rush: Error opening history file\n");
+        exit(EXIT_FAILURE);
+    }
+    return history_file;
+}
 void check_history_file() {
     char *env_home;
     env_home = getenv("XDG_CONFIG_HOME");
@@ -26,11 +35,7 @@ void check_history_file() {
     int env_home_len = strlen(env_home);
     int histfilename_len = strlen(HISTFILE);
     int path_len = env_home_len + histfilename_len + 2; // 2 for slash and null byte
-    histfile_path = malloc(sizeof(char) * path_len);
-    if (histfile_path == NULL) {
-        fprintf(stderr, "rush: Error allocating memory\n");
-        exit(EXIT_FAILURE);
-    }
+    histfile_path = memalloc(sizeof(char) * path_len);
     histfile_path[0] = '\0'; // initialise string
     // concatenate home and history file name to a path
     strcat(histfile_path, env_home);
@@ -38,21 +43,13 @@ void check_history_file() {
     strcat(histfile_path, HISTFILE);
     histfile_path[path_len - 1] = '\0';
     if (access(histfile_path, F_OK) != 0) { // check for file existence
-        history_file = fopen(histfile_path, "w"); // read and write, if doesn't exist, create
-        if (history_file == NULL) {
-            fprintf(stderr, "rush: Error opening history file\n");
-            exit(EXIT_FAILURE);
-        }
+        history_file = open_history_file("w"); // read and write, if doesn't exist, create
         fclose(history_file);
     }
 }
 
 void save_command_history(char *args) {
-    history_file = fopen(histfile_path, "a+");
-    if (history_file == NULL) {
-        fprintf(stderr, "rush: Error opening history file\n");
-        exit(EXIT_FAILURE);
-    }
+    history_file = open_history_file("a+");
     char cmd[RL_BUFSIZE];
     cmd[0] = '\0';
     strcat(cmd, args);
@@ -97,17 +94,8 @@ int is_duplicate(char **history, int line_count, char *line) {
 }
 
 char **get_all_history(bool check) {
-    history_file = fopen(histfile_path, "r");
-    if (history_file == NULL) {
-        fprintf(stderr, "rush: Error opening history file\n");
-        exit(EXIT_FAILURE);
-    }
-
-    char **history = malloc(MAX_HISTORY * sizeof(char*));
-    if (history == NULL) {
-        fprintf(stderr, "rush: Error allocating memory\n");
-        exit(EXIT_FAILURE);
-    }
+    history_file = open_history_file("r");
+    char **history = memalloc(MAX_HISTORY * sizeof(char*));
     char buffer[RL_BUFSIZE];
     int line_count = 0;
 
