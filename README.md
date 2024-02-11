@@ -33,7 +33,7 @@ $ ./rush
 - Pipes
 - autojump to directorys
 - stdin, stdout, stderr redirect
-- background jobs
+- Background jobs
 
 # Built in commands
 - cd
@@ -46,7 +46,9 @@ $ ./rush
 - bg
 
 # Todo Features
-- tab completion
+- Tab completion
+- Git integration
+- Allow arguments with space in double quotes
 
 # Credits
 - [Tutorial - Write a shell in C](https://brennan.io/2015/01/16/write-a-shell-in-c/)
