@@ -1,6 +1,6 @@
 CC=gcc
 
-VERSION = 0.1
+VERSION = 1.0
 PREFIX = /usr/local
 MANPREFIX = ${PREFIX}/share/man
 
@@ -14,6 +14,7 @@ OBJ = ${SRC:.c=.o}
 
 rush: ${OBJ}
 	${CC} -o $@ ${OBJ}
+	strip rush
 
 clean:
 	rm -rf rush

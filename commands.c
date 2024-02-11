@@ -168,7 +168,7 @@ int cd(char **args) {
 
 // show help menu
 int help(char **args) {
-    printf("rush v0.01-alpha\n");
+    printf("rush %s\n", VERSION);
     printf("Built in commands:\n");
 
     for (int i = 0; i < num_builtins(); i++) {
