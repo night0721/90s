@@ -6,7 +6,7 @@ MANPREFIX = ${PREFIX}/share/man
 
 CFLAGS = -std=gnu11 -O0 -Wall -DVERSION=\"${VERSION}\"
 
-SRC = rush.c color.c constants.h history.c commands.c
+SRC = rush.c color.c constants.h history.c commands.c job.c
 OBJ = ${SRC:.c=.o}
 
 .c.o:

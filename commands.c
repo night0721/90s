@@ -9,6 +9,7 @@
 #include "constants.h"
 #include "history.h"
 #include "rush.h"
+#include "job.h"
 
 int execute(char **args);
 
@@ -19,6 +20,8 @@ int quit(char **args);
 int history(char **args);
 int export(char **args);
 int source(char **args);
+int j(char **args);
+int bg(char **args);
 
 // List of builtin commands' names
 char *builtin_cmds[] = {
@@ -27,7 +30,9 @@ char *builtin_cmds[] = {
     "exit",
     "history",
     "export",
-    "source"
+    "source",
+    "j",
+    "bg",
 };
 
 int (*builtin_func[]) (char **) = {
@@ -36,26 +41,124 @@ int (*builtin_func[]) (char **) = {
     &quit, // cant name it exit as it is taken
     &history,
     &export,
-    &source
+    &source,
+    &j,
+    &bg,
 };
+
+char *shortcut_dirs[] = {
+    "rush",
+    "bin",
+    "localbin",
+};
+
+char *shortcut_expand_dirs[] = {
+    "~/.nky/Coding/C/rush",
+    "~/.local/bin",
+    "/usr/local/bin",
+};
+
+char *gethome() {
+    char *home = getenv("HOME");
+    if (home == NULL) {
+        fprintf(stderr, "Error: HOME environment variable not set.\n");
+        exit(EXIT_FAILURE);
+    }
+    return home;
+}
+
+char *replace_home_dir(char *str) {
+    char *home_path = gethome();
+
+    int path_len = strlen(str);
+    int home_len = strlen(home_path);
+
+    // Allocate memory for the new path
+    char* new_path = memalloc(sizeof(char) * (path_len + home_len + 1));
+
+    int i = 0, j = 0;
+    while (str[i] != '\0') {
+        if (str[i] == '~') {
+            // Copy HOME environment variable value
+            for (int k = 0; k < home_len; k++) {
+                new_path[j++] = home_path[k];
+            }
+            i++;
+        } else {
+            new_path[j++] = str[i++];
+        }
+    }
+
+    new_path[j] = '\0';
+    return new_path;
+}
+
+char *replace_absolute_home(char *str) {
+    char *home_path = gethome();
+
+    int path_len = strlen(str);
+    int home_len = strlen(home_path);
+
+    // Allocate memory for the new path
+    char* new_path = memalloc(sizeof(char) * (path_len - home_len + 2));
+
+    int i = 0, j = 0;
+    while (str[i] != '\0') {
+        if (strncmp(&str[i], home_path, home_len) == 0) {
+            // Copy HOME environment variable value
+            new_path[j++] = '~';
+            i += home_len;
+        } else {
+            new_path[j++] = str[i++];
+        }
+    }
+
+    new_path[j] = '\0';
+    return new_path;
+}
 
 // number of built in commands
 int num_builtins() {
     return sizeof(builtin_cmds) / sizeof(char *);
 }
 
+// autojump
+int j(char **args) {
+    if (args[1] == NULL) {
+        fprintf(stderr, "rush: not enough arguments\n");
+        return -1;
+    }
+    for (int i = 0; i < sizeof(shortcut_dirs) / sizeof(char *); i++) {
+        int len = strlen(shortcut_dirs[i]);
+        if (strncmp(args[1], shortcut_dirs[i], len) == 0) {
+            char **merged_cd = memalloc(sizeof(char *) * 3);
+            merged_cd[0] = "cd";
+            merged_cd[1] = shortcut_expand_dirs[i];
+            merged_cd[2] = NULL;
+            cd(merged_cd);
+            printf("jumped to %s\n", shortcut_expand_dirs[i]);
+            return 1;
+        }
+    }
+    return 1;
+}
+
 // change directory
 int cd(char **args) {
+    int i = 0;
     if (args[1] == NULL) {
-        char *home = getenv("HOME");
-        if (home == NULL) {
-            fprintf(stderr, "rush: HOME environment variable is missing\n");
-            exit(EXIT_FAILURE);
-        }
+        char *home = gethome();
         if (chdir(home) != 0) {
             perror("rush");
         }
     } else {
+        while (args[1][i] != '\0') {
+            if (args[1][i] == '~') {
+                args[1] = replace_home_dir(args[1]);
+                break;
+            }
+            i++;
+        }
         if (chdir(args[1]) != 0) {
             perror("rush");
         }
@@ -144,6 +247,24 @@ int source(char **args) {
     return status; // Indicate success
 }
 
+int bg(char **args) {
+    if (args[1] == NULL) {
+        fprintf(stderr, "rush: not enough arguments\n");
+        return -1;
+    }
+    int job_index = atoi(args[1]);
+    if (job_index == 0) {
+        fprintf(stderr, "rush: invalid job index\n");
+        return -1;
+    }
+    job *search = get_job(job_index - 1);
+    if (search == NULL) {
+        fprintf(stderr, "rush: no such job\n");
+        return -1;
+    }
+    printf("Job %i: %s\n", job_index, search->command);
+    return 1;
+}
 bool is_builtin(char *command) {
     for (int i = 0; i < num_builtins(); i++) {
         if (strcmp(command, builtin_cmds[i]) == 0) {
@@ -153,6 +274,58 @@ bool is_builtin(char *command) {
     return false;
 }
 
+int launch(char **args, int fd, int options) {
+    int is_bgj = (options & OPT_BGJ) ? 1 : 0;
+    int redirect_stdout = (options & OPT_STDOUT) ? 1 : 0;
+    int redirect_stdin = (options & OPT_STDIN) ? 1 : 0;
+    int redirect_stderr = (options & OPT_STDERR) ? 1 : 0;
+
+    pid_t pid;
+
+    int status;
+    if ((pid = fork()) == 0) {
+        // Child process
+        if (fd > 2) {
+            // not stdin, stdout, or stderr
+            if (redirect_stdout) {
+                if (dup2(fd, STDOUT_FILENO) == -1) {
+                    perror("rush");
+                }
+            }
+            if (redirect_stdin) {
+                if (dup2(fd, STDIN_FILENO) == -1) {
+                    perror("rush");
+                }
+            }
+            if (redirect_stderr) {
+                if (dup2(fd, STDERR_FILENO) == -1) {
+                    perror("rush");
+                }
+            }
+            close(fd); // close fd as it is duplicated already
+        }
+        if (execvp(args[0], args) == -1) {
+            if (errno == ENOENT) {
+                fprintf(stderr, "rush: command not found: %s\n", args[0]);
+            }
+        }
+        exit(EXIT_FAILURE); // exit the child
+    } else if (pid < 0) {
+        perror("fork failed");
+    } else {
+        // Parent process
+        if (is_bgj) {
+            int job_index = add_job(pid, args[0], true);
+            printf("[Job: %i] [Process ID: %i] [Command: %s]\n", job_index + 1, pid, args[0]);
+            return 1;
+        } else {
+            do {
+                waitpid(pid, &status, WUNTRACED); // wait child to be exited to return to prompt
+            } while (!WIFEXITED(status) && !WIFSIGNALED(status));
+        }
+    }
+    return 1;
+}
 // execute built in commands or launch commands and wait it to terminate, return 1 to keep shell running
 int execute(char **args) {
     if (args[0] == NULL) { // An empty command was entered.
@@ -165,52 +338,94 @@ int execute(char **args) {
             return (*builtin_func[i])(args);
         }
     }
-    
     int num_arg = 0;
 
-    while (*args != NULL) {
-        num_arg++; // count number of args
-        args++;
-    }
-
-    args -= num_arg;
-
-    pid_t pid;
-
-    int status;
-    if ((pid = fork()) == 0) {
-        // Child process
-        if (execvp(args[0], args) == -1) {
-            if (errno == ENOENT) {
-                fprintf(stderr, "rush: command not found: %s\n", args[0]);
+    while (args[num_arg] != NULL) {
+        if (strncmp(args[num_arg], "&", 1) == 0) {
+            args[num_arg] = NULL;
+            if (args[num_arg + 1] != NULL) {
+                // have commands after &
+                execute(&args[num_arg + 1]);
             }
+            launch(args, STDOUT_FILENO, OPT_BGJ);
+            return 1;
         }
-        exit(EXIT_FAILURE); // exit the child
-    } else if (pid < 0) {
-        perror("fork failed");
-    } else {
-        // Parent process
-        do {
-            waitpid(pid, &status, WUNTRACED); // wait child to be exited to return to prompt
-        } while (!WIFEXITED(status) && !WIFSIGNALED(status)); 
+        if (strncmp(args[num_arg], ">", 1) == 0) {
+            int fd = fileno(fopen(args[num_arg + 1], "w+"));
+            if (fd == -1) {
+                perror("rush");
+                return 1;
+            }
+            args[num_arg] = NULL;
+            int asdf = 0;
+            while (args[asdf] != NULL) {
+                fprintf(stderr, "args[%i]: %s\n", asdf, args[asdf]);
+                asdf++;
+            }
+
+            return launch(args, fd, OPT_FGJ | OPT_STDOUT);
+        }
+        if (strncmp(args[num_arg], "<", 1) == 0) {
+            int fd = fileno(fopen(args[num_arg + 1], "r"));
+            if (fd == -1) {
+                perror("rush");
+                return 1;
+            }
+            args[num_arg] = NULL;
+            return launch(args, fd, OPT_FGJ | OPT_STDIN);
+        }
+        if (strncmp(args[num_arg], "2>", 2) == 0) {
+            int fd = fileno(fopen(args[num_arg + 1], "w+"));
+            if (fd == -1) {
+                perror("rush");
+                return 1;
+            }
+            args[num_arg] = NULL;
+            return launch(args, fd, OPT_FGJ | OPT_STDERR);
+        }
+        if (strncmp(args[num_arg], ">&", 2) == 0) {
+            int fd = fileno(fopen(args[num_arg + 1], "w+"));
+            if (fd == -1) {
+                perror("rush");
+                return 1;
+            }
+            args[num_arg] = NULL;
+            return launch(args, fd, OPT_FGJ | OPT_STDOUT | OPT_STDERR);
+        }
+        if (strncmp(args[num_arg], ">>", 2) == 0) {
+            int fd = fileno(fopen(args[num_arg + 1], "a+"));
+            if (fd == -1) {
+                perror("rush");
+                return 1;
+            }
+            args[num_arg] = NULL;
+            return launch(args, fd, OPT_FGJ | OPT_STDOUT);
+        }
+
+        num_arg++; // count number of args
     }
 
-    return 1;
+    return launch(args, STDOUT_FILENO, OPT_FGJ);
 }
 
 // execute_pipe with as many pipes as needed
 int execute_pipe(char ***args) {
     int pipefd[2];
-    int status;
     pid_t pid;
     int in = 0;
 
     int num_cmds = 0;
     while (args[num_cmds] != NULL) {
+        int num_args = 0;
+        while (args[num_cmds][num_args] != NULL) {
+            //printf("args [%i]: %s\n", num_cmds, args[num_cmds][num_args]);
+            num_args++;
+        }
         num_cmds++;
     }
     
     for (int i = 0; i < num_cmds - 1; i++) {
+        //printf("i: %d\n", i);
         pipe(pipefd);
         if ((pid = fork()) == 0) {
             // then this (child)
@@ -219,8 +434,8 @@ int execute_pipe(char ***args) {
                 dup2(pipefd[1], STDOUT_FILENO); // make output go to pipe (next output)
             }
             close(pipefd[0]); // close original input
-            status = execute(args[i]);
-            exit(status);
+            execute(args[i]);
+            exit(EXIT_SUCCESS);
         } else if (pid < 0) {
             perror("fork failed");
         }
@@ -230,16 +445,17 @@ int execute_pipe(char ***args) {
     }
 
     if ((pid = fork()) == 0) {
+       // printf("last command\n");
         dup2(in, STDIN_FILENO); // get input from pipe
-        status = execute(args[num_cmds - 1]);
-        exit(status);
+        execute(args[num_cmds - 1]);
+        exit(EXIT_SUCCESS);
     } else if (pid < 0) {
         perror("fork failed");
     }
 
     close(in);
     for (int i = 0; i < num_cmds; i++) {
-        wait(&status);
+        waitpid(pid, NULL, 0);
     }
     return 1;
 }

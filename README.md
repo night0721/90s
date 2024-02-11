@@ -14,6 +14,7 @@ rush is a minimalistic shell for Unix systems written in C.
 # Building
 ```sh
 $ make
+$ sudo make install
 ```
 
 # Usage
@@ -30,6 +31,9 @@ $ ./rush
 - Editing using left and right arrow keys
 - !! to repeat last command
 - Pipes
+- autojump to directorys
+- stdin, stdout, stderr redirect
+- background jobs
 
 # Built in commands
 - cd
@@ -38,10 +42,10 @@ $ ./rush
 - history
 - export
 - source
+- j
+- bg
 
 # Todo Features
-- stdin, stdout, stderr redirect
-- background jobs
 - tab completion
 
 # Credits
