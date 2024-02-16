@@ -54,11 +54,14 @@ $ ./rush
 - j
 - bg
 
+## Notes
+- History is either saved in HOME or XDG_CONFIG_HOME if it is defined
+
 ## Todo Features
 - Tab completion
 - Git integration
 - Allow arguments with space in double quotes
-- Underline file path if it exists
+- Underline file path if it exists `echo -e "\033[4mabc\033[0m"`
 - Aliases
 
 ## Credits
