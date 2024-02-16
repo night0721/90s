@@ -207,8 +207,6 @@ int export(char **args) {
                 return 0;
             }
         } else {
-            printf("rush: [arg0: %s] [arg1: %s]", args[0], args[1]);
-            printf("rush: [Variable: %s] [Value: %s]\n", variable, value);
             fprintf(stderr, "rush: Syntax error when setting environment variable\nUse \"export VARIABLE=VALUE\"\n");
             return 0;
         }
@@ -418,14 +416,12 @@ int execute_pipe(char ***args) {
     while (args[num_cmds] != NULL) {
         int num_args = 0;
         while (args[num_cmds][num_args] != NULL) {
-            //printf("args [%i]: %s\n", num_cmds, args[num_cmds][num_args]);
             num_args++;
         }
         num_cmds++;
     }
     
     for (int i = 0; i < num_cmds - 1; i++) {
-        //printf("i: %d\n", i);
         pipe(pipefd);
         if ((pid = fork()) == 0) {
             // then this (child)
@@ -445,7 +441,6 @@ int execute_pipe(char ***args) {
     }
 
     if ((pid = fork()) == 0) {
-       // printf("last command\n");
         dup2(in, STDIN_FILENO); // get input from pipe
         execute(args[num_cmds - 1]);
         exit(EXIT_SUCCESS);

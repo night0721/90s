@@ -54,9 +54,7 @@ job *get_job(int index) {
         return NULL;
     }
     for (int i = 0; i < index; i++) {
-        printf("current: %s\n", current->command);
         current = current->next;
-        printf("next: %s\n", current->command);
     }
     return current;
 }
