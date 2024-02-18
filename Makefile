@@ -31,7 +31,7 @@ install: all
 	cp -f rush ${DESTDIR}${PREFIX}/bin
 	chmod 755 ${DESTDIR}${PREFIX}/bin/rush
 	mkdir -p ${DESTDIR}${MANPREFIX}/man1
-	cp -f rush.1 ${DESTDIR}${MANPREFIX}/man1
+	sed "s/VERSION/${VERSION}/g" < rush.1 > ${DESTDIR}${MANPREFIX}/man1/rush.1
 	chmod 644 ${DESTDIR}${MANPREFIX}/man1/rush.1
 
 uninstall:

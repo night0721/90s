@@ -64,6 +64,12 @@ $ ./rush
 - Underline file path if it exists `echo -e "\033[4mabc\033[0m"`
 - Aliases
 
+# Contributions
+Contributions are welcomed, feel free to open a pull request.
+
+# License
+This project is licensed under the GNU Public License v3.0. See [LICENSE](https://github.com/night0721/rush/blob/master/LICENSE) for more information.
+
 ## Credits
 - [Tutorial - Write a shell in C](https://brennan.io/2015/01/16/write-a-shell-in-c/)
 - [dash](https://github.com/danishprakash/dash)
