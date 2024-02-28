@@ -21,7 +21,7 @@ clean:
 
 dist:
 	mkdir -p rush-${VERSION}
-	cp -R LICENSE Makefile README.md rush.1 rush rush-${VERSION}
+	cp -R LICENSE README.md rush.1 rush rush-${VERSION}
 	tar -cf rush-${VERSION}.tar rush-${VERSION}
 	gzip rush-${VERSION}.tar
 	rm -rf rush-${VERSION}
