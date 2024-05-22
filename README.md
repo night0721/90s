@@ -1,5 +1,5 @@
 # rush
-rush is a minimalistic shell for Unix systems written in C.
+Minimalist, customizable shell with syntax highlighting.
 
 * Disclaimer: This project is for me to learn to write Unix syscalls, code might be inefficient, feel free to point out the mistakes and open a issue for that!
 
