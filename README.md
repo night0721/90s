@@ -1,5 +1,5 @@
 # 90s
-Minimalist, customizable shell with syntax highlighting.
+Minimalist, customizable shell written in C99 with syntax highlighting.
 
 * Disclaimer: This project is for me to learn to write Unix syscalls, code might be inefficient, feel free to point out the mistakes and open a issue for that!
 
