@@ -6,7 +6,7 @@
 #include <linux/limits.h>
 
 #include "history.h"
-#include "rush.h"
+#include "90s.h"
 #include "constants.h"
 
 FILE *history_file;
@@ -16,7 +16,7 @@ int cmd_count = 0;
 FILE *open_history_file(char *mode) {
     history_file = fopen(histfile_path, mode);
     if (history_file == NULL) {
-        fprintf(stderr, "rush: Error opening history file\n");
+        fprintf(stderr, "90s: Error opening history file\n");
         exit(EXIT_FAILURE);
     }
     return history_file;
@@ -29,7 +29,7 @@ void check_history_file() {
         env_home = getenv("HOME");
     }
     if (env_home == NULL) {
-        fprintf(stderr, "rush: HOME AND XDG_CONFIG_HOME environment variable is missing\n");
+        fprintf(stderr, "90s: HOME AND XDG_CONFIG_HOME environment variable is missing\n");
         exit(EXIT_FAILURE);
     }
     int env_home_len = strlen(env_home);

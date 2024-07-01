@@ -1,4 +1,4 @@
-# rush
+# 90s
 Minimalist, customizable shell with syntax highlighting.
 
 * Disclaimer: This project is for me to learn to write Unix syscalls, code might be inefficient, feel free to point out the mistakes and open a issue for that!
@@ -37,7 +37,7 @@ Minimalist, customizable shell with syntax highlighting.
 
 # Usage
 ```sh
-$ ./rush
+$ ./90s
 
 # > to redirect stdout
 # < to redirect stdin
@@ -66,7 +66,7 @@ $ make
 Contributions are welcomed, feel free to open a pull request.
 
 # License
-This project is licensed under the GNU Public License v3.0. See [LICENSE](https://github.com/night0721/rush/blob/master/LICENSE) for more information.
+This project is licensed under the GNU Public License v3.0. See [LICENSE](https://github.com/night0721/90s/blob/master/LICENSE) for more information.
 
 # Credits
 - [Tutorial - Write a shell in C](https://brennan.io/2015/01/16/write-a-shell-in-c/)

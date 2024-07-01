@@ -17,7 +17,7 @@
 void *memalloc(size_t size) {
     void *ptr = malloc(size);
     if (!ptr) {
-        fputs("rush: Error allocating memory\n", stderr);
+        fputs("90s: Error allocating memory\n", stderr);
         exit(EXIT_FAILURE);
     }
     return ptr;
@@ -38,7 +38,7 @@ void change_terminal_attribute(int option) {
 char **setup_path_variable() {
     char *envpath = getenv("PATH");
     if (envpath == NULL) {
-        fprintf(stderr, "rush: PATH environment variable is missing\n");
+        fprintf(stderr, "90s: PATH environment variable is missing\n");
         exit(EXIT_FAILURE);
     }
     char *path_cpy = memalloc(sizeof(char) * (strlen(envpath) + 1));
@@ -178,7 +178,7 @@ char *readline(char **paths) {
                         if (last_command_len > replace_len) {
                             buffer = realloc(buffer, buffer_len + last_command_len - replace_len + 1);
                             if (!buffer) {
-                                fprintf(stderr, "rush: Error allocating memory\n");
+                                fprintf(stderr, "90s: Error allocating memory\n");
                                 exit(EXIT_FAILURE);
                             }
                         }
@@ -335,7 +335,7 @@ char *readline(char **paths) {
             bufsize += RL_BUFSIZE;
             buffer = realloc(buffer, bufsize);
             if (!buffer) {
-                fprintf(stderr, "rush: Error allocating memory\n");
+                fprintf(stderr, "90s: Error allocating memory\n");
                 exit(EXIT_FAILURE);
             }
         }
@@ -357,7 +357,7 @@ char **argsplit(char *line) {
             bufsize += TOK_BUFSIZE;
             tokens = realloc(tokens, bufsize * sizeof(char*));
             if (!tokens) {
-                fprintf(stderr, "rush: Error allocating memory\n");
+                fprintf(stderr, "90s: Error allocating memory\n");
                 exit(EXIT_FAILURE);
             }
         }

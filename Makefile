@@ -1,42 +1,45 @@
-CC=gcc
+.POSIX:
+.SUFFIXES:
 
+CC = cc
 VERSION = 1.0
-PREFIX = /usr/local
-MANPREFIX = ${PREFIX}/share/man
+TARGET = 90s
+MANPAGE = $(TARGET).1
+PREFIX ?= /usr/local
+BINDIR = $(PREFIX)/bin
+MANDIR = $(PREFIX)/share/man/man1
 
-CFLAGS = -std=gnu11 -O0 -Wall -DVERSION=\"${VERSION}\"
+# Flags
+CFLAGS = -O3 -march=native -mtune=native -pipe -s -flto -std=c99 -pedantic -Wall -D_DEFAULT_SOURCE -D_XOPEN_SOURCE=600 -DVERSION=$(VERSION)
 
-SRC = rush.c color.c constants.h history.c commands.c job.c
-OBJ = ${SRC:.c=.o}
+SRC = src/*.c
+INCLUDE = include
 
-.c.o:
-	${CC} -c ${CFLAGS} $<
-
-rush: ${OBJ}
-	${CC} -o $@ ${OBJ}
-	strip rush
-
-clean:
-	rm -rf rush
+$(TARGET): $(SRC)
+	$(CC) $(SRC) -o $@ $(CFLAGS) -I$(INCLUDE)
 
 dist:
-	mkdir -p rush-${VERSION}
-	cp -R LICENSE README.md rush.1 rush rush-${VERSION}
-	tar -cf rush-${VERSION}.tar rush-${VERSION}
-	gzip rush-${VERSION}.tar
-	rm -rf rush-${VERSION}
+	mkdir -p $(TARGET)-$(VERSION)
+	cp -R README.md $(MANPAGE) $(TARGET) $(TARGET)-$(VERSION)
+	tar -cf $(TARGET)-$(VERSION).tar $(TARGET)-$(VERSION)
+	gzip $(TARGET)-$(VERSION).tar
+	rm -rf $(TARGET)-$(VERSION)
 
-install: all
-	mkdir -p ${DESTDIR}${PREFIX}/bin
-	cp -f rush ${DESTDIR}${PREFIX}/bin
-	chmod 755 ${DESTDIR}${PREFIX}/bin/rush
-	mkdir -p ${DESTDIR}${MANPREFIX}/man1
-	sed "s/VERSION/${VERSION}/g" < rush.1 > ${DESTDIR}${MANPREFIX}/man1/rush.1
-	chmod 644 ${DESTDIR}${MANPREFIX}/man1/rush.1
+install: $(TARGET)
+	mkdir -p $(DESTDIR)$(BINDIR)
+	mkdir -p $(DESTDIR)$(MANDIR)
+	cp -p $(TARGET) $(DESTDIR)$(BINDIR)/$(TARGET)
+	chmod 755 $(DESTDIR)$(BINDIR)/$(TARGET)
+	cp -p $(MANPAGE) $(DESTDIR)$(MANDIR)/$(MANPAGE)
+	chmod 644 $(DESTDIR)$(MANDIR)/$(MANPAGE)
 
 uninstall:
-	rm -f ${DESTDIR}${PREFIX}/bin/rush\
-		${DESTDIR}${MANPREFIX}/man1/rush.1
-all: rush
+	$(RM) $(DESTDIR)$(BINDIR)/$(TARGET)
+	$(RM) $(DESTDIR)$(MANDIR)/$(MANPAGE)
 
-.PHONY: all clean dist install uninstall rush
+clean:
+	$(RM) $(TARGET)
+
+all: $(TARGET)
+
+.PHONY: all dist install uninstall clean

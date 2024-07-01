@@ -2,7 +2,7 @@
 #include <stdbool.h>
 #include <string.h>
 
-#include "rush.h"
+#include "90s.h"
 
 typedef struct job {
     pid_t pid;

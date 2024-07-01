@@ -8,7 +8,7 @@
 
 #include "constants.h"
 #include "history.h"
-#include "rush.h"
+#include "90s.h"
 #include "job.h"
 
 int execute(char **args);
@@ -47,13 +47,13 @@ int (*builtin_func[]) (char **) = {
 };
 
 char *shortcut_dirs[] = {
-    "rush",
+    "90s",
     "bin",
     "localbin",
 };
 
 char *shortcut_expand_dirs[] = {
-    "~/.nky/Coding/C/rush",
+    "~/.nky/Coding/C/90s",
     "~/.local/bin",
     "/usr/local/bin",
 };
@@ -125,7 +125,7 @@ int num_builtins() {
 // autojump
 int j(char **args) {
     if (args[1] == NULL) {
-        fprintf(stderr, "rush: not enough arguments\n");
+        fprintf(stderr, "90s: not enough arguments\n");
         return -1;
     }
     for (int i = 0; i < sizeof(shortcut_dirs) / sizeof(char *); i++) {
@@ -149,7 +149,7 @@ int cd(char **args) {
     if (args[1] == NULL) {
         char *home = gethome();
         if (chdir(home) != 0) {
-            perror("rush");
+            perror("90s");
         }
     } else {
         while (args[1][i] != '\0') {
@@ -160,7 +160,7 @@ int cd(char **args) {
             i++;
         }
         if (chdir(args[1]) != 0) {
-            perror("rush");
+            perror("90s");
         }
     }
     return 1;
@@ -168,7 +168,7 @@ int cd(char **args) {
 
 // show help menu
 int help(char **args) {
-    printf("rush %s\n", VERSION);
+    printf("90s %s\n", VERSION);
     printf("Built in commands:\n");
 
     for (int i = 0; i < num_builtins(); i++) {
@@ -203,11 +203,11 @@ int export(char **args) {
         char *value = strtok(NULL, "=\n");
         if (variable != NULL && value != NULL) {
             if (setenv(variable, value, 1) != 0) {
-                fprintf(stderr, "rush: Error setting environment variable\n");
+                fprintf(stderr, "90s: Error setting environment variable\n");
                 return 0;
             }
         } else {
-            fprintf(stderr, "rush: Syntax error when setting environment variable\nUse \"export VARIABLE=VALUE\"\n");
+            fprintf(stderr, "90s: Syntax error when setting environment variable\nUse \"export VARIABLE=VALUE\"\n");
             return 0;
         }
         args++;
@@ -217,14 +217,14 @@ int export(char **args) {
 
 int source(char **args) {
     if (args[1] == NULL) {
-        fprintf(stderr, "rush: not enough arguments\n");
+        fprintf(stderr, "90s: not enough arguments\n");
         return -1;
     }
 
     FILE *file = fopen(args[1], "r");
 
     if (file == NULL) {
-        fprintf(stderr, "rush: no such file or directory '%s'\n", args[1]);
+        fprintf(stderr, "90s: no such file or directory '%s'\n", args[1]);
         return -1;
     }
 
@@ -247,17 +247,17 @@ int source(char **args) {
 
 int bg(char **args) {
     if (args[1] == NULL) {
-        fprintf(stderr, "rush: not enough arguments\n");
+        fprintf(stderr, "90s: not enough arguments\n");
         return -1;
     }
     int job_index = atoi(args[1]);
     if (job_index == 0) {
-        fprintf(stderr, "rush: invalid job index\n");
+        fprintf(stderr, "90s: invalid job index\n");
         return -1;
     }
     job *search = get_job(job_index - 1);
     if (search == NULL) {
-        fprintf(stderr, "rush: no such job\n");
+        fprintf(stderr, "90s: no such job\n");
         return -1;
     }
     printf("Job %i: %s\n", job_index, search->command);
@@ -287,24 +287,24 @@ int launch(char **args, int fd, int options) {
             // not stdin, stdout, or stderr
             if (redirect_stdout) {
                 if (dup2(fd, STDOUT_FILENO) == -1) {
-                    perror("rush");
+                    perror("90s");
                 }
             }
             if (redirect_stdin) {
                 if (dup2(fd, STDIN_FILENO) == -1) {
-                    perror("rush");
+                    perror("90s");
                 }
             }
             if (redirect_stderr) {
                 if (dup2(fd, STDERR_FILENO) == -1) {
-                    perror("rush");
+                    perror("90s");
                 }
             }
             close(fd); // close fd as it is duplicated already
         }
         if (execvp(args[0], args) == -1) {
             if (errno == ENOENT) {
-                fprintf(stderr, "rush: command not found: %s\n", args[0]);
+                fprintf(stderr, "90s: command not found: %s\n", args[0]);
             }
         }
         exit(EXIT_FAILURE); // exit the child
@@ -351,7 +351,7 @@ int execute(char **args) {
         if (strncmp(args[num_arg], ">", 1) == 0) {
             int fd = fileno(fopen(args[num_arg + 1], "w+"));
             if (fd == -1) {
-                perror("rush");
+                perror("90s");
                 return 1;
             }
             args[num_arg] = NULL;
@@ -366,7 +366,7 @@ int execute(char **args) {
         if (strncmp(args[num_arg], "<", 1) == 0) {
             int fd = fileno(fopen(args[num_arg + 1], "r"));
             if (fd == -1) {
-                perror("rush");
+                perror("90s");
                 return 1;
             }
             args[num_arg] = NULL;
@@ -375,7 +375,7 @@ int execute(char **args) {
         if (strncmp(args[num_arg], "2>", 2) == 0) {
             int fd = fileno(fopen(args[num_arg + 1], "w+"));
             if (fd == -1) {
-                perror("rush");
+                perror("90s");
                 return 1;
             }
             args[num_arg] = NULL;
@@ -384,7 +384,7 @@ int execute(char **args) {
         if (strncmp(args[num_arg], ">&", 2) == 0) {
             int fd = fileno(fopen(args[num_arg + 1], "w+"));
             if (fd == -1) {
-                perror("rush");
+                perror("90s");
                 return 1;
             }
             args[num_arg] = NULL;
@@ -393,7 +393,7 @@ int execute(char **args) {
         if (strncmp(args[num_arg], ">>", 2) == 0) {
             int fd = fileno(fopen(args[num_arg + 1], "a+"));
             if (fd == -1) {
-                perror("rush");
+                perror("90s");
                 return 1;
             }
             args[num_arg] = NULL;
