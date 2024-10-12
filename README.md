@@ -37,7 +37,7 @@ Minimalist, customizable shell written in C99 with syntax highlighting.
 
 # Usage
 ```sh
-$ ./90s
+$ 90s
 
 # > to redirect stdout
 # < to redirect stdin
