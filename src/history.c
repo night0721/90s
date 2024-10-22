@@ -3,7 +3,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include <unistd.h>
-#include <linux/limits.h>
+#include <limits.h>
 
 #include "history.h"
 #include "90s.h"

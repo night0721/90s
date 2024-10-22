@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <linux/limits.h>
+#include <limits.h>
 #include <time.h>
 #include <stdbool.h>
 #include <signal.h>
