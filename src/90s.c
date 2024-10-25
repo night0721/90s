@@ -138,6 +138,7 @@ void highlight(char *buffer, char **paths) {
             printf("\x1b[38;2;243;139;168m%s\x1b[0m", buffer); // print red as invalid command
         }
     }
+	fflush(stdout);
     free(command_without_arg);
 }
 
@@ -456,6 +457,7 @@ void command_loop(char **paths) {
         strcpy(arrow, "»");
         arrow = color_text(arrow, blue);
         printf("%s %s %s ", modtime, cwd, arrow);
+		fflush(stdout);
 
         cmd_count = 0; // upward arrow key resets command count
         line = readline(paths);
