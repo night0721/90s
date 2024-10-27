@@ -124,15 +124,15 @@ void highlight(char *buffer, char **paths) {
     if (valid) {
         if (command_without_arg != NULL) {
             buffer += cmd_len;
-            printf("\x1b[38;2;137;180;250m%s\x1b[0m\x1b[38;2;255;255;255m%s\x1b[0m", command_without_arg, buffer); // print green as valid command, but only color the command, not the arguments
+            printf("\x1b[38;2;166;227;161m%s\x1b[0m\x1b[38;2;255;255;255m%s\x1b[0m", command_without_arg, buffer); // print green as valid command, but only color the command, not the arguments
             buffer -= cmd_len;
         } else {
-            printf("\x1b[38;2;137;180;250m%s\x1b[0m", buffer); // print green as valid command
+            printf("\x1b[38;2;166;227;161m%s\x1b[0m", buffer); // print green as valid command
         }
     } else {
         if (command_without_arg != NULL) {
             buffer += cmd_len;
-            printf("\x1b[38;2;243;139;168m%s\x1b[0m\x1b[38;2;255;255;255m%s\x1b[0m", command_without_arg, buffer); // print green as valid command, but only color the command, not the arguments
+            printf("\x1b[38;2;243;139;168m%s\x1b[0m\x1b[38;2;255;255;255m%s\x1b[0m", command_without_arg, buffer); // print red as invalid command, but only color the command, not the arguments
             buffer -= cmd_len;
         } else {
             printf("\x1b[38;2;243;139;168m%s\x1b[0m", buffer); // print red as invalid command
