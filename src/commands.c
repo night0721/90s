@@ -58,7 +58,7 @@ char *shortcut_expand_dirs[] = {
     "/usr/local/bin",
 };
 
-char *gethome() {
+char *gethome(void) {
     char *home = getenv("HOME");
     if (home == NULL) {
         fprintf(stderr, "Error: HOME environment variable not set.\n");
@@ -118,7 +118,7 @@ char *replace_absolute_home(char *str) {
 }
 
 // number of built in commands
-int num_builtins() {
+int num_builtins(void) {
     return sizeof(builtin_cmds) / sizeof(char *);
 }
 

@@ -13,7 +13,7 @@ typedef struct job {
 
 job *jobs = NULL;
 
-int num_jobs() {
+int num_jobs(void) {
     job *current = jobs;
     int count = 0;
     while (current != NULL) {

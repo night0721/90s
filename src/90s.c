@@ -35,7 +35,7 @@ void change_terminal_attribute(int option) {
     }
 }  
 
-char **setup_path_variable() {
+char **setup_path_variable(void) {
     char *envpath = getenv("PATH");
     if (envpath == NULL) {
         fprintf(stderr, "90s: PATH environment variable is missing\n");
@@ -95,7 +95,7 @@ void shiftright(int chars) {
     printf("\033[%dC", chars);
 }
 
-void clearline() {
+void clearline(void) {
     printf("\033[K"); // clear line to the right of cursor
 }
 

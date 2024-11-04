@@ -21,7 +21,7 @@ FILE *open_history_file(char *mode) {
     }
     return history_file;
 }
-void check_history_file() {
+void check_history_file(void) {
     char *env_home;
     env_home = getenv("XDG_CONFIG_HOME");
     if (env_home == NULL) {

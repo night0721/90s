@@ -1,16 +1,16 @@
 .POSIX:
 .SUFFIXES:
 
-VERSION = 1.0
+VERSION = "1.0"
 TARGET = 90s
 MANPAGE = $(TARGET).1
 PREFIX ?= /usr/local
 BINDIR = $(PREFIX)/bin
 MANDIR = $(PREFIX)/share/man/man1
 
-CFLAGS = -O3 -march=native -mtune=native -pipe -s -flto -std=c99 -pedantic -Wall -DVERSION=$(VERSION)
+CFLAGS = -Os -march=native -mtune=native -pipe -s -flto -std=c99 -pedantic -Wall -DVERSION=$(VERSION) -D_DEFAULT_SOURCE
 
-SRC = src/*.c
+SRC != find src -name *.c
 INCLUDE = include
 
 $(TARGET): $(SRC)
