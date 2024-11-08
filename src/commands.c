@@ -168,7 +168,7 @@ int cd(char **args) {
 
 // show help menu
 int help(char **args) {
-    printf("90s %s\n", VERSION);
+    printf("90s %f\n", VERSION);
     printf("Built in commands:\n");
 
     for (int i = 0; i < num_builtins(); i++) {
