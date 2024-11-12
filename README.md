@@ -19,6 +19,7 @@ Minimalist, customizable shell written in C99 with syntax highlighting.
 - autojump to directorys
 - stdin, stdout, stderr redirect
 - Background jobs
+
 ## Built in commands
 - cd
 - help
@@ -28,6 +29,7 @@ Minimalist, customizable shell written in C99 with syntax highlighting.
 - source
 - j
 - bg
+
 ## Todo Features
 - Tab completion
 - Git integration
