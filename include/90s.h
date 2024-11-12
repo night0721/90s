@@ -1,5 +1,7 @@
-#ifndef RUSH_H_
-#define RUSH_H_
+#ifndef S_H_
+#define S_H_
+
+#define VERSION "1.0.0"
 
 #include <stdio.h>
 

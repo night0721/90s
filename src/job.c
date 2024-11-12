@@ -13,7 +13,8 @@ typedef struct job {
 
 job *jobs = NULL;
 
-int num_jobs(void) {
+int num_jobs(void)
+{
     job *current = jobs;
     int count = 0;
     while (current != NULL) {
@@ -23,7 +24,8 @@ int num_jobs(void) {
     return count;
 }
 
-int add_job(pid_t pid, char *command, bool status) {
+int add_job(pid_t pid, char *command, bool status)
+{
     job *current = jobs;
     job *new_job = memalloc(sizeof(job));
     new_job->pid = pid;
@@ -45,7 +47,8 @@ int add_job(pid_t pid, char *command, bool status) {
     return index;
 }
 
-job *get_job(int index) {
+job *get_job(int index)
+{
     job *current = jobs;
     if (index == 0) {
         return current;

@@ -13,7 +13,7 @@
 
 int execute(char **args);
 
-// Function declarations for builtin commands
+/* Builtin commands */
 int cd(char **args);
 int help(char **args);
 int quit(char **args);
@@ -23,7 +23,6 @@ int source(char **args);
 int j(char **args);
 int bg(char **args);
 
-// List of builtin commands' names
 char *builtin_cmds[] = {
     "cd",
     "help",
@@ -38,7 +37,7 @@ char *builtin_cmds[] = {
 int (*builtin_func[]) (char **) = {
     &cd,
     &help,
-    &quit, // cant name it exit as it is taken
+    &quit, /* Can't name it exit as it is taken */
     &history,
     &export,
     &source,
@@ -53,12 +52,13 @@ char *shortcut_dirs[] = {
 };
 
 char *shortcut_expand_dirs[] = {
-    "~/.nky/Coding/C/90s",
+    "~/.nky/git/90s",
     "~/.local/bin",
     "/usr/local/bin",
 };
 
-char *gethome(void) {
+char *gethome(void)
+{
     char *home = getenv("HOME");
     if (home == NULL) {
         fprintf(stderr, "Error: HOME environment variable not set.\n");
@@ -67,14 +67,15 @@ char *gethome(void) {
     return home;
 }
 
-char *replace_home_dir(char *str) {
+char *replace_home_dir(char *str)
+{
     char *home_path = gethome();
 
     int path_len = strlen(str);
     int home_len = strlen(home_path);
 
     // Allocate memory for the new path
-    char* new_path = memalloc(sizeof(char) * (path_len + home_len + 1));
+    char* new_path = memalloc(path_len + home_len + 1);
 
     int i = 0, j = 0;
     while (str[i] != '\0') {
@@ -93,37 +94,14 @@ char *replace_home_dir(char *str) {
     return new_path;
 }
 
-char *replace_absolute_home(char *str) {
-    char *home_path = gethome();
-
-    int path_len = strlen(str);
-    int home_len = strlen(home_path);
-
-    // Allocate memory for the new path
-    char* new_path = memalloc(sizeof(char) * (path_len - home_len + 2));
-
-    int i = 0, j = 0;
-    while (str[i] != '\0') {
-        if (strncmp(&str[i], home_path, home_len) == 0) {
-            // Copy HOME environment variable value
-            new_path[j++] = '~';
-            i += home_len;
-        } else {
-            new_path[j++] = str[i++];
-        }
-    }
-
-    new_path[j] = '\0';
-    return new_path;
-}
-
 // number of built in commands
 int num_builtins(void) {
     return sizeof(builtin_cmds) / sizeof(char *);
 }
 
 // autojump
-int j(char **args) {
+int j(char **args)
+{
     if (args[1] == NULL) {
         fprintf(stderr, "90s: not enough arguments\n");
         return -1;
@@ -143,7 +121,9 @@ int j(char **args) {
     return 1;
 }
 
-// change directory
+/*
+ * Change directory
+ */
 int cd(char **args) {
     int i = 0;
     if (args[1] == NULL) {
@@ -166,9 +146,12 @@ int cd(char **args) {
     return 1;
 }
 
-// show help menu
-int help(char **args) {
-    printf("90s %f\n", VERSION);
+/*
+ * Show help menu
+ */
+int help(char **args)
+{
+    printf("90s %s\n", VERSION);
     printf("Built in commands:\n");
 
     for (int i = 0; i < num_builtins(); i++) {
@@ -180,11 +163,14 @@ int help(char **args) {
     return 1;
 }
 
-int quit(char **args) {
-    return 0; // exit prompting loop, which also the shell
+int quit(char **args)
+{
+	/* Exit prompt loop */
+    return 0;
 }
 
-int history(char **args) {
+int history(char **args)
+{
     char **history = get_all_history(true);
 
     for (int i = 0; history[i] != NULL; ++i) {
@@ -196,8 +182,10 @@ int history(char **args) {
     return 1;
 }
 
-int export(char **args) {
-    args++; // skip the command
+int export(char **args)
+{
+	/* Skip the command */
+    args++;
     while (*args != NULL) {
         char *variable = strtok(*args, "=\n");
         char *value = strtok(NULL, "=\n");
@@ -215,7 +203,8 @@ int export(char **args) {
     return 1;
 }
 
-int source(char **args) {
+int source(char **args)
+{
     if (args[1] == NULL) {
         fprintf(stderr, "90s: not enough arguments\n");
         return -1;
@@ -245,7 +234,8 @@ int source(char **args) {
     return status; // Indicate success
 }
 
-int bg(char **args) {
+int bg(char **args)
+{
     if (args[1] == NULL) {
         fprintf(stderr, "90s: not enough arguments\n");
         return -1;
@@ -263,7 +253,9 @@ int bg(char **args) {
     printf("Job %i: %s\n", job_index, search->command);
     return 1;
 }
-bool is_builtin(char *command) {
+
+bool is_builtin(char *command)
+{
     for (int i = 0; i < num_builtins(); i++) {
         if (strcmp(command, builtin_cmds[i]) == 0) {
             return true;
@@ -272,7 +264,8 @@ bool is_builtin(char *command) {
     return false;
 }
 
-int launch(char **args, int fd, int options) {
+int launch(char **args, int fd, int options)
+{
     int is_bgj = (options & OPT_BGJ) ? 1 : 0;
     int redirect_stdout = (options & OPT_STDOUT) ? 1 : 0;
     int redirect_stdin = (options & OPT_STDIN) ? 1 : 0;
@@ -325,7 +318,8 @@ int launch(char **args, int fd, int options) {
     return 1;
 }
 // execute built in commands or launch commands and wait it to terminate, return 1 to keep shell running
-int execute(char **args) {
+int execute(char **args)
+{
     if (args[0] == NULL) { // An empty command was entered.
         return 1;
     }
@@ -407,7 +401,8 @@ int execute(char **args) {
 }
 
 // execute_pipe with as many pipes as needed
-int execute_pipe(char ***args) {
+int execute_pipe(char ***args)
+{
     int pipefd[2];
     pid_t pid;
     int in = 0;

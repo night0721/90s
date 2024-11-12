@@ -13,7 +13,8 @@ FILE *history_file;
 char *histfile_path;
 int cmd_count = 0;
 
-FILE *open_history_file(char *mode) {
+FILE *open_history_file(char *mode)
+{
     history_file = fopen(histfile_path, mode);
     if (history_file == NULL) {
         fprintf(stderr, "90s: Error opening history file\n");
@@ -21,7 +22,9 @@ FILE *open_history_file(char *mode) {
     }
     return history_file;
 }
-void check_history_file(void) {
+
+void check_history_file(void)
+{
     char *env_home;
     env_home = getenv("XDG_CONFIG_HOME");
     if (env_home == NULL) {
@@ -48,7 +51,8 @@ void check_history_file(void) {
     }
 }
 
-void save_command_history(char *args) {
+void save_command_history(char *args)
+{
     history_file = open_history_file("a+");
     char cmd[RL_BUFSIZE];
     cmd[0] = '\0';
@@ -60,8 +64,10 @@ void save_command_history(char *args) {
     fclose(history_file);
 }
 
-char *read_command(int direction) {
-    if (direction == 1) { // up
+char *read_command(int direction)
+{
+	/* Up */
+    if (direction == 1) {
         cmd_count++;
     } else { // down
         if (cmd_count == 0) {
@@ -84,7 +90,8 @@ char *read_command(int direction) {
     return history[num_history - cmd_count];
 }
 
-int is_duplicate(char **history, int line_count, char *line) {
+int is_duplicate(char **history, int line_count, char *line)
+{
     for (int i = 0; i < line_count; ++i) {
         if (strcmp(history[i], line) == 0) {
             return 1;
@@ -93,9 +100,10 @@ int is_duplicate(char **history, int line_count, char *line) {
     return 0;
 }
 
-char **get_all_history(bool check) {
+char **get_all_history(bool check)
+{
     history_file = open_history_file("r");
-    char **history = memalloc(MAX_HISTORY * sizeof(char*));
+    char **history = memalloc(MAX_HISTORY * sizeof(char *));
     char buffer[RL_BUFSIZE];
     int line_count = 0;
 
