@@ -1,5 +1,5 @@
 # 90s
-Minimalist, customizable shell written in C99 with syntax highlighting.
+Minimalist, customizable shell written in C99 with syntax highlighting and no dependency.
 
 * Disclaimer: This project is for me to learn to write Unix syscalls, code might be inefficient, feel free to point out the mistakes and open a issue for that!
 
@@ -8,8 +8,6 @@ Minimalist, customizable shell written in C99 with syntax highlighting.
 [![Invalid command](https://r2.e-z.host/3c62bb3a-a8a9-43f6-afd6-553646f51dc4/xf80dq0b.png)]()
 
 # Features
-- No dependencies except a compiler
-- Showing current time and directory with custom color
 - Syntax highlighting on valid commands using ANSI colors
 - History navigation using up and down keys with history command
 - Support for environment variables
