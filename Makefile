@@ -1,7 +1,7 @@
 .POSIX:
 .SUFFIXES:
 
-VERSION = "1.0"
+VERSION = \"1.0\"
 TARGET = 90s
 MANPAGE = $(TARGET).1
 PREFIX ?= /usr/local
