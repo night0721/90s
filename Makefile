@@ -9,7 +9,7 @@ MANDIR = $(PREFIX)/share/man/man1
 
 CFLAGS += -std=c99 -pedantic -Wall -DVERSION=$(VERSION) -D_DEFAULT_SOURCE
 
-SRC != find src -name *.c
+SRC != find src -name "*.c"
 OBJS = $(SRC:.c=.o)
 INCLUDE = include
 
