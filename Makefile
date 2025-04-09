@@ -1,27 +1,29 @@
 .POSIX:
-.SUFFIXES:
 
-VERSION = \"1.0\"
+VERSION = 1.0
 TARGET = 90s
 MANPAGE = $(TARGET).1
 PREFIX ?= /usr/local
 BINDIR = $(PREFIX)/bin
 MANDIR = $(PREFIX)/share/man/man1
 
-CFLAGS = -Os -march=native -mtune=native -pipe -s -flto -std=c99 -pedantic -Wall -DVERSION=$(VERSION) -D_DEFAULT_SOURCE
+CFLAGS += -std=c99 -pedantic -Wall -DVERSION=$(VERSION) -D_DEFAULT_SOURCE
 
 SRC != find src -name *.c
+OBJS = $(SRC:.c=.o)
 INCLUDE = include
 
-$(TARGET): $(SRC)
-	$(CC) $(SRC) -o $@ $(CFLAGS) -I$(INCLUDE)
+.c.o:
+	$(CC) -o $@ $(CFLAGS) -I$(INCLUDE) -c $<
+
+$(TARGET): $(OBJS)
+	$(CC) -o $@ $(OBJS)
 
 dist:
 	mkdir -p $(TARGET)-$(VERSION)
 	cp -R README.md $(MANPAGE) $(TARGET) $(TARGET)-$(VERSION)
-	tar -cf $(TARGET)-$(VERSION).tar $(TARGET)-$(VERSION)
-	gzip $(TARGET)-$(VERSION).tar
-	rm -rf $(TARGET)-$(VERSION)
+	tar -czf $(TARGET)-$(VERSION).tar.gz $(TARGET)-$(VERSION)
+	$(RM) -r $(TARGET)-$(VERSION)
 
 install: $(TARGET)
 	mkdir -p $(DESTDIR)$(BINDIR)
@@ -32,11 +34,11 @@ install: $(TARGET)
 	chmod 644 $(DESTDIR)$(MANDIR)/$(MANPAGE)
 
 uninstall:
-	rm $(DESTDIR)$(BINDIR)/$(TARGET)
-	rm $(DESTDIR)$(MANDIR)/$(MANPAGE)
+	$(RM) $(DESTDIR)$(BINDIR)/$(TARGET)
+	$(RM) $(DESTDIR)$(MANDIR)/$(MANPAGE)
 
 clean:
-	rm $(TARGET)
+	$(RM) $(TARGET) *.o
 
 all: $(TARGET)
 
