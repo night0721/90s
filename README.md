@@ -14,7 +14,7 @@ Minimalist, customizable shell written in C99 with syntax highlighting and no de
 - Editing using left and right arrow keys
 - !! to repeat last command
 - Pipes
-- autojump to directorys
+- autojump to directories
 - stdin, stdout, stderr redirect
 - Background jobs
 
@@ -37,7 +37,7 @@ Minimalist, customizable shell written in C99 with syntax highlighting and no de
 
 # Usage
 ```sh
-$ 90s
+90s
 
 # > to redirect stdout
 # < to redirect stdin
