@@ -116,10 +116,9 @@ void highlight(char *buffer, char **paths)
 		cmd_len = cmd_part - buffer;
 		char *cmd = memalloc(cmd_len + 1);
 		command_without_arg = memalloc(cmd_len + 1);
-		for (int i = 0; i < (cmd_part - buffer); i++) {
-			cmd[i] = buffer[i];
-		}
-		strcpy(command_without_arg, cmd);
+		memcpy(cmd, buffer, cmd_len);
+		cmd[cmd_len] = '\0';
+		memcpy(command_without_arg, cmd, cmd_len + 1);
 		cmd[cmd_len] = '\0';
 		command_without_arg[cmd_len] = '\0';
 		valid = find_command(paths, cmd);
@@ -285,8 +284,8 @@ char *readline(char **paths)
 		if (navigated && buf_len >= 1) {
 			if (position > 0) {
 				shiftleft(position);  // move cursor to the beginning
-				clearline();
 			}
+			clearline();
 			position = buf_len;
 		}
 

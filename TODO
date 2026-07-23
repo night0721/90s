@@ -1,0 +1,27 @@
+histgrep + runlog + cdhist combo
+
+One unified history/usage tracker for your shell. Instead of basic history | grep, you get structured logs of what you run, when, where, and for how long.
+How it could work:
+
+runlog: logs each command, duration, exit code, cwd.
+cdhist: tracks folder navigation frequency + recents.
+histgrep: fuzzy searches across command history by keyword, dir, or success.
+Store in SQLite or JSONL.
+Bonus ideas:
+Generate “usage reports” (most used cmds, time per project).
+termdash could pull from it for stats panels.
+Integrate with neo (ctrl-r -> histgrep).
+
+- Tab completion
+- Git integration
+- Allow arguments with space in double quotes
+- Underline file path if it exists `echo -e "\033[4mabc\033[0m"`
+- Aliases
+
+Goal: featureful but minimal shell supporting job control, pipelines, and programmable completion.
+
+Build a parser for pipelines and redirections.
+synttax highlighting
+
+multiplexer like tmux but simpler
+Multiple PTYs multiplexed to one output; detach/attach sessions.

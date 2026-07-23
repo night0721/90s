@@ -54,13 +54,8 @@ void check_history_file(void)
 void save_command_history(char *args)
 {
     history_file = open_history_file("a+");
-    char cmd[RL_BUFSIZE];
-    cmd[0] = '\0';
-    strcat(cmd, args);
-    int cmd_len = strlen(cmd);
-    cmd[cmd_len] = '\n'; // put new line feed to split commands
-    // ptr to first obj, size of each obj, number of obj, file ptr
-    fwrite(cmd, sizeof(char), cmd_len + 1, history_file);
+	fwrite(args, sizeof(char), strlen(args), history_file);
+	fputc('\n', history_file); // put new line feed to split commands
     fclose(history_file);
 }
 
