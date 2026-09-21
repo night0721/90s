@@ -89,7 +89,7 @@ bool find_command(char **paths, char *command)
 	while (*paths != NULL) {
 		char current_path[PATH_MAX];
 		current_path[0] = '\0';
-		sprintf(current_path, "%s/%s", *paths, command);
+		snprintf(current_path, PATH_MAX, "%s/%s", *paths, command);
 		if (access(current_path, X_OK) == 0) {
 			// command is executable
 			return true;
