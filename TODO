@@ -12,11 +12,6 @@ Generate “usage reports” (most used cmds, time per project).
 termdash could pull from it for stats panels.
 Integrate with neo (ctrl-r -> histgrep).
 
-- Tab completion
-- Git integration
-- Allow arguments with space in double quotes
-- Underline file path if it exists `echo -e "\033[4mabc\033[0m"`
-- Aliases
 
 Goal: featureful but minimal shell supporting job control, pipelines, and programmable completion.
 
