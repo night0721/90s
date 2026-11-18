@@ -21,6 +21,7 @@ Minimalist, customizable shell written in C99 with syntax highlighting and no de
 - Aliases
 - Git integration
 - Allow arguments with space in double quotes
+- Tab completion
 
 ## Built in commands
 - cd
