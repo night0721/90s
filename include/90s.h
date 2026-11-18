@@ -2,6 +2,7 @@
 #define S_H_
 
 #define VERSION "0.0.3-beta"
+
 #include <stdio.h>
 
 void *memalloc(size_t size);
