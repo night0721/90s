@@ -15,8 +15,5 @@ Integrate with neo (ctrl-r -> histgrep).
 
 Goal: featureful but minimal shell supporting job control, pipelines, and programmable completion.
 
-Build a parser for pipelines and redirections.
-synttax highlighting
-
 multiplexer like tmux but simpler
 Multiple PTYs multiplexed to one output; detach/attach sessions.
