@@ -1,19 +1,22 @@
+#define _POSIX_C_SOURCE 200112L
+#include <errno.h>
+#include <fcntl.h>
+#include <limits.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <stdbool.h>
-#include <errno.h>
 #include <sys/wait.h>
+#include <unistd.h>
 
+#include "90s.h"
+#include "alias.h"
+#include "commands.h"
 #include "constants.h"
 #include "history.h"
-#include "90s.h"
 #include "job.h"
+#include "parser.h"
 
-int execute(char **args);
-
-/* Builtin commands */
 int cd(char **args);
 int help(char **args);
 int quit(char **args);
@@ -24,126 +27,78 @@ int j(char **args);
 int bg(char **args);
 
 char *builtin_cmds[] = {
-    "cd",
-    "help",
-    "exit",
-    "history",
-    "export",
-    "source",
-    "j",
-    "bg",
+	"cd", "help", "exit", "history", "export", "source", "j", "bg",
 };
 
-int (*builtin_func[]) (char **) = {
-    &cd,
-    &help,
-    &quit, /* Can't name it exit as it is taken */
-    &history,
-    &export,
-    &source,
-    &j,
-    &bg,
+int (*builtin_func[])(char **) = {
+	&cd, &help, &quit, &history, &export, &source, &j, &bg,
 };
 
 char *shortcut_dirs[] = {
-    "90s",
-    "bin",
-    "localbin",
+	"90s",
+	"bin",
+	"localbin",
 };
 
 char *shortcut_expand_dirs[] = {
-    "~/.nky/git/90s",
-    "~/.local/bin",
-    "/usr/local/bin",
+	"~/.nky/git/90s",
+	"~/.local/bin",
+	"/usr/local/bin",
 };
 
 char *gethome(void)
 {
-    char *home = getenv("HOME");
-    if (home == NULL) {
-        fprintf(stderr, "Error: HOME environment variable not set.\n");
-        exit(EXIT_FAILURE);
-    }
-    return home;
+	char *home = getenv("HOME");
+
+	if (home == NULL) {
+		fprintf(stderr, "Error: HOME environment variable not set.\n");
+		exit(EXIT_FAILURE);
+	}
+	return home;
 }
 
-char *replace_home_dir(char *str)
+int num_builtins(void) { return sizeof(builtin_cmds) / sizeof(char *); }
+
+bool is_builtin(char *command)
 {
-    char *home_path = gethome();
-
-    int path_len = strlen(str);
-    int home_len = strlen(home_path);
-
-    // Allocate memory for the new path
-    char* new_path = memalloc(path_len + home_len + 1);
-
-    int i = 0, j = 0;
-    while (str[i] != '\0') {
-        if (str[i] == '~') {
-            // Copy HOME environment variable value
-            for (int k = 0; k < home_len; k++) {
-                new_path[j++] = home_path[k];
-            }
-            i++;
-        } else {
-            new_path[j++] = str[i++];
-        }
-    }
-
-    new_path[j] = '\0';
-    return new_path;
-}
-
-// number of built in commands
-int num_builtins(void) {
-    return sizeof(builtin_cmds) / sizeof(char *);
+	for (int i = 0; i < num_builtins(); i++) {
+		if (strcmp(command, builtin_cmds[i]) == 0)
+			return true;
+	}
+	return false;
 }
 
 // autojump
 int j(char **args)
 {
-    if (args[1] == NULL) {
-        fprintf(stderr, "90s: not enough arguments\n");
-        return -1;
-    }
-    for (size_t i = 0; i < sizeof(shortcut_dirs) / sizeof(char *); i++) {
-        int len = strlen(shortcut_dirs[i]);
-        if (strncmp(args[1], shortcut_dirs[i], len) == 0) {
-            char **merged_cd = memalloc(sizeof(char *) * 3);
-            merged_cd[0] = "cd";
-            merged_cd[1] = shortcut_expand_dirs[i];
-            merged_cd[2] = NULL;
-            cd(merged_cd);
-            printf("jumped to %s\n", shortcut_expand_dirs[i]);
-            return 1;
-        }
-    }
-    return 1;
+	if (args[1] == NULL) {
+		fprintf(stderr, "90s: not enough arguments\n");
+		return -1;
+	}
+	for (size_t i = 0; i < sizeof(shortcut_dirs) / sizeof(char *); i++) {
+		if (strncmp(args[1], shortcut_dirs[i], strlen(shortcut_dirs[i])) != 0)
+			continue;
+		char path[PATH_MAX];
+		const char *dir = shortcut_expand_dirs[i];
+		if (dir[0] == '~')
+			snprintf(path, sizeof(path), "%s%s", gethome(), dir + 1);
+		else
+			snprintf(path, sizeof(path), "%s", dir);
+		char *cd_args[] = {"cd", path, NULL};
+		cd(cd_args);
+		printf("jumped to %s\n", path);
+		return 1;
+	}
+	return 1;
 }
 
-/*
- * Change directory
- */
-int cd(char **args) {
-    int i = 0;
-    if (args[1] == NULL) {
-        char *home = gethome();
-        if (chdir(home) != 0) {
-            perror("90s");
-        }
-    } else {
-        while (args[1][i] != '\0') {
-            if (args[1][i] == '~') {
-                args[1] = replace_home_dir(args[1]);
-                break;
-            }
-            i++;
-        }
-        if (chdir(args[1]) != 0) {
-            perror("90s");
-        }
-    }
-    return 1;
+int cd(char **args)
+{
+	const char *target = args[1] ? args[1] : gethome();
+
+	if (chdir(target) != 0)
+		perror("90s");
+	return 1;
 }
 
 /*
@@ -151,304 +106,313 @@ int cd(char **args) {
  */
 int help(char **args)
 {
-	(void) args;
-    printf("90s %f\n", VERSION);
-    printf("Built in commands:\n");
-
-    for (int i = 0; i < num_builtins(); i++) {
-        printf("  %s\n", builtin_cmds[i]);
-    }
-
-    printf("Use 'man' to read manual of programs\n");
-    printf("Licensed under GPL v3\n");
-    return 1;
+	(void)args;
+	printf("90s %s\n", VERSION);
+	printf("Built in commands:\n");
+	for (int i = 0; i < num_builtins(); i++)
+		printf("  %s\n", builtin_cmds[i]);
+	printf("Use 'man' to read manual of programs\n");
+	printf("Licensed under GPL v3\n");
+	return 1;
 }
 
 int quit(char **args)
 {
-	(void) args;
+	(void)args;
 	/* Exit prompt loop */
-    return 0;
+	return 0;
 }
 
 int history(char **args)
 {
-	(void) args;
-    char **history = get_all_history(true);
+	(void)args;
+	char **hist = get_all_history(true);
 
-    for (int i = 0; history[i] != NULL; ++i) {
-        printf("%s\n", history[i]);
-        free(history[i]);
-    }
-
-    free(history);
-    return 1;
+	for (int i = 0; hist[i] != NULL; ++i) {
+		printf("%s\n", hist[i]);
+		free(hist[i]);
+	}
+	free(hist);
+	return 1;
 }
 
 int export(char **args)
 {
-	/* Skip the command */
-    args++;
-    while (*args != NULL) {
-        char *variable = strtok(*args, "=\n");
-        char *value = strtok(NULL, "=\n");
-        if (variable != NULL && value != NULL) {
-            if (setenv(variable, value, 1) != 0) {
-                fprintf(stderr, "90s: Error setting environment variable\n");
-                return 0;
-            }
-        } else {
-            fprintf(stderr, "90s: Syntax error when setting environment variable\nUse \"export VARIABLE=VALUE\"\n");
-            return 0;
-        }
-        args++;
-    }
-    return 1;
+	args++;
+	while (*args != NULL) {
+		char *variable = strtok(*args, "=\n");
+		char *value = strtok(NULL, "=\n");
+		if (variable != NULL && value != NULL) {
+			if (setenv(variable, value, 1) != 0) {
+				fprintf(stderr, "90s: Error setting environment variable\n");
+				return 0;
+			}
+		} else {
+			fprintf(stderr, "90s: Syntax error when setting environment "
+							"variable\nUse \"export VARIABLE=VALUE\"\n");
+			return 0;
+		}
+		args++;
+	}
+	return 1;
 }
 
 int source(char **args)
 {
-    if (args[1] == NULL) {
-        fprintf(stderr, "90s: not enough arguments\n");
-        return -1;
-    }
+	if (args[1] == NULL) {
+		fprintf(stderr, "90s: not enough arguments\n");
+		return -1;
+	}
 
-    FILE *file = fopen(args[1], "r");
+	FILE *file = fopen(args[1], "r");
+	if (file == NULL) {
+		fprintf(stderr, "90s: no such file or directory '%s'\n", args[1]);
+		return -1;
+	}
 
-    if (file == NULL) {
-        fprintf(stderr, "90s: no such file or directory '%s'\n", args[1]);
-        return -1;
-    }
+	char line[RL_BUFSIZE];
+	int status = 1;
+	while (status && fgets(line, sizeof(line), file) != NULL) {
+		// Remove newline character if present
+		size_t len = strlen(line);
+		if (len > 0 && line[len - 1] == '\n')
+			line[len - 1] = '\0';
+		status = execute_line(line);
+	}
 
-    char line[RL_BUFSIZE];
-    int status;
-    while (fgets(line, sizeof(line), file) != NULL) {
-        // Remove newline character if present
-        size_t len = strlen(line);
-        if (len > 0 && line[len - 1] == '\n') {
-            line[len - 1] = '\0';
-        }
-
-        char **args = argsplit(line);
-        status = execute(args);
-    }
-
-    fclose(file);
-    return status; // Indicate success
+	fclose(file);
+	return status; // Indicate success
 }
 
 int bg(char **args)
 {
-    if (args[1] == NULL) {
-        fprintf(stderr, "90s: not enough arguments\n");
-        return -1;
-    }
-    int job_index = atoi(args[1]);
-    if (job_index == 0) {
-        fprintf(stderr, "90s: invalid job index\n");
-        return -1;
-    }
-    job *search = get_job(job_index - 1);
-    if (search == NULL) {
-        fprintf(stderr, "90s: no such job\n");
-        return -1;
-    }
-    printf("Job %i: %s\n", job_index, search->command);
-    return 1;
+	if (args[1] == NULL) {
+		fprintf(stderr, "90s: not enough arguments\n");
+		return -1;
+	}
+	int job_index = atoi(args[1]);
+	if (job_index == 0) {
+		fprintf(stderr, "90s: invalid job index\n");
+		return -1;
+	}
+	job *search = get_job(job_index - 1);
+	if (search == NULL) {
+		fprintf(stderr, "90s: no such job\n");
+		return -1;
+	}
+	printf("Job %i: %s\n", job_index, search->command);
+	return 1;
 }
 
-bool is_builtin(char *command)
+static int run_builtin(char **args)
 {
-    for (int i = 0; i < num_builtins(); i++) {
-        if (strcmp(command, builtin_cmds[i]) == 0) {
-            return true;
-        }
-    }
-    return false;
+	for (int i = 0; i < num_builtins(); i++) {
+		if (strcmp(args[0], builtin_cmds[i]) == 0)
+			return builtin_func[i](args);
+	}
+	return 1;
 }
 
-int launch(char **args, int fd, int options)
+static int redirect_fd(const char *path, int flags, int target)
 {
-    int is_bgj = (options & OPT_BGJ) ? 1 : 0;
-    int redirect_stdout = (options & OPT_STDOUT) ? 1 : 0;
-    int redirect_stdin = (options & OPT_STDIN) ? 1 : 0;
-    int redirect_stderr = (options & OPT_STDERR) ? 1 : 0;
+	int fd = open(path, flags, 0666);
 
-    pid_t pid;
-
-    int status;
-    if ((pid = fork()) == 0) {
-        // Child process
-        if (fd > 2) {
-            // not stdin, stdout, or stderr
-            if (redirect_stdout) {
-                if (dup2(fd, STDOUT_FILENO) == -1) {
-                    perror("90s");
-                }
-            }
-            if (redirect_stdin) {
-                if (dup2(fd, STDIN_FILENO) == -1) {
-                    perror("90s");
-                }
-            }
-            if (redirect_stderr) {
-                if (dup2(fd, STDERR_FILENO) == -1) {
-                    perror("90s");
-                }
-            }
-            close(fd); // close fd as it is duplicated already
-        }
-        if (execvp(args[0], args) == -1) {
-            if (errno == ENOENT) {
-                fprintf(stderr, "90s: command not found: %s\n", args[0]);
-            }
-        }
-        exit(EXIT_FAILURE); // exit the child
-    } else if (pid < 0) {
-        perror("fork failed");
-    } else {
-        // Parent process
-        if (is_bgj) {
-            int job_index = add_job(pid, args[0], true);
-            printf("[Job: %i] [Process ID: %i] [Command: %s]\n", job_index + 1, pid, args[0]);
-            return 1;
-        } else {
-            do {
-                waitpid(pid, &status, WUNTRACED); // wait child to be exited to return to prompt
-            } while (!WIFEXITED(status) && !WIFSIGNALED(status));
-        }
-    }
-    return 1;
-}
-// execute built in commands or launch commands and wait it to terminate, return 1 to keep shell running
-int execute(char **args)
-{
-    if (args[0] == NULL) { // An empty command was entered.
-        return 1;
-    }
-    
-    // prioritize builtin commands
-    for (int i = 0; i < num_builtins(); i++) {
-        if (strcmp(args[0], builtin_cmds[i]) == 0) {
-            return (*builtin_func[i])(args);
-        }
-    }
-    int num_arg = 0;
-
-    while (args[num_arg] != NULL) {
-        if (strncmp(args[num_arg], "&", 1) == 0) {
-            args[num_arg] = NULL;
-            if (args[num_arg + 1] != NULL) {
-                // have commands after &
-                execute(&args[num_arg + 1]);
-            }
-            launch(args, STDOUT_FILENO, OPT_BGJ);
-            return 1;
-        }
-        if (strncmp(args[num_arg], ">", 1) == 0) {
-            int fd = fileno(fopen(args[num_arg + 1], "w+"));
-            if (fd == -1) {
-                perror("90s");
-                return 1;
-            }
-            args[num_arg] = NULL;
-            int asdf = 0;
-            while (args[asdf] != NULL) {
-                fprintf(stderr, "args[%i]: %s\n", asdf, args[asdf]);
-                asdf++;
-            }
-
-            return launch(args, fd, OPT_FGJ | OPT_STDOUT);
-        }
-        if (strncmp(args[num_arg], "<", 1) == 0) {
-            int fd = fileno(fopen(args[num_arg + 1], "r"));
-            if (fd == -1) {
-                perror("90s");
-                return 1;
-            }
-            args[num_arg] = NULL;
-            return launch(args, fd, OPT_FGJ | OPT_STDIN);
-        }
-        if (strncmp(args[num_arg], "2>", 2) == 0) {
-            int fd = fileno(fopen(args[num_arg + 1], "w+"));
-            if (fd == -1) {
-                perror("90s");
-                return 1;
-            }
-            args[num_arg] = NULL;
-            return launch(args, fd, OPT_FGJ | OPT_STDERR);
-        }
-        if (strncmp(args[num_arg], ">&", 2) == 0) {
-            int fd = fileno(fopen(args[num_arg + 1], "w+"));
-            if (fd == -1) {
-                perror("90s");
-                return 1;
-            }
-            args[num_arg] = NULL;
-            return launch(args, fd, OPT_FGJ | OPT_STDOUT | OPT_STDERR);
-        }
-        if (strncmp(args[num_arg], ">>", 2) == 0) {
-            int fd = fileno(fopen(args[num_arg + 1], "a+"));
-            if (fd == -1) {
-                perror("90s");
-                return 1;
-            }
-            args[num_arg] = NULL;
-            return launch(args, fd, OPT_FGJ | OPT_STDOUT);
-        }
-
-        num_arg++; // count number of args
-    }
-
-    return launch(args, STDOUT_FILENO, OPT_FGJ);
+	if (fd == -1) {
+		fprintf(stderr, "90s: %s: %s\n", path, strerror(errno));
+		return -1;
+	}
+	if (fd != target) {
+		dup2(fd, target);
+		close(fd);
+	}
+	return 0;
 }
 
-// execute_pipe with as many pipes as needed
-int execute_pipe(char ***args)
+static int apply_redirects(const command_t *c)
 {
-    int pipefd[2];
-    pid_t pid;
-    int in = 0;
+	if (c->in_file && redirect_fd(c->in_file, O_RDONLY, STDIN_FILENO) == -1)
+		return -1;
+	if (c->out_file &&
+		redirect_fd(c->out_file,
+					O_WRONLY | O_CREAT | (c->out_append ? O_APPEND : O_TRUNC),
+					STDOUT_FILENO) == -1)
+		return -1;
+	if (c->err_file &&
+		redirect_fd(c->err_file,
+					O_WRONLY | O_CREAT | (c->err_append ? O_APPEND : O_TRUNC),
+					STDERR_FILENO) == -1)
+		return -1;
+	if (c->err_to_out)
+		dup2(STDOUT_FILENO, STDERR_FILENO);
+	return 0;
+}
 
-    int num_cmds = 0;
-    while (args[num_cmds] != NULL) {
-        int num_args = 0;
-        while (args[num_cmds][num_args] != NULL) {
-            num_args++;
-        }
-        num_cmds++;
-    }
-    
-    for (int i = 0; i < num_cmds - 1; i++) {
-        pipe(pipefd);
-        if ((pid = fork()) == 0) {
-            // then this (child)
-            dup2(in, STDIN_FILENO); // get input from previous command
-            if (i < num_cmds - 1) {
-                dup2(pipefd[1], STDOUT_FILENO); // make output go to pipe (next output)
-            }
-            close(pipefd[0]); // close original input
-            execute(args[i]);
-            exit(EXIT_SUCCESS);
-        } else if (pid < 0) {
-            perror("fork failed");
-        }
-        // this will be executed first
-        close(pipefd[1]); // close output
-        in = pipefd[0]; // save the input for the next command
-    }
+static char **colorize(char **argv, int argc)
+{
+	static char *names[] = {"ls", "diff", "grep"};
+	bool match = false;
 
-    if ((pid = fork()) == 0) {
-        dup2(in, STDIN_FILENO); // get input from pipe
-        execute(args[num_cmds - 1]);
-        exit(EXIT_SUCCESS);
-    } else if (pid < 0) {
-        perror("fork failed");
-    }
+	for (size_t i = 0; i < sizeof(names) / sizeof(*names); i++) {
+		if (strcmp(argv[0], names[i]) == 0)
+			match = true;
+	}
+	if (!match)
+		return argv;
 
-    close(in);
-    for (int i = 0; i < num_cmds; i++) {
-        waitpid(pid, NULL, 0);
-    }
-    return 1;
+	char **out = memalloc(sizeof(char *) * (argc + 2));
+	out[0] = argv[0];
+	out[1] = "--color=auto";
+	memcpy(&out[2], &argv[1], sizeof(char *) * argc);
+	return out;
+}
+
+static void exec_command(command_t *c)
+{
+	if (apply_redirects(c) == -1)
+		_exit(1);
+
+	if (is_builtin(c->argv[0])) {
+		int rc = run_builtin(c->argv);
+		fflush(stdout);
+		_exit(rc < 0 ? 1 : 0);
+	}
+
+	char **argv = colorize(c->argv, c->argc);
+	execvp(argv[0], argv);
+	if (errno == ENOENT)
+		fprintf(stderr, "90s: command not found: %s\n", argv[0]);
+	else
+		fprintf(stderr, "90s: %s: %s\n", argv[0], strerror(errno));
+	_exit(127);
+}
+
+int run_pipeline(pipeline_t *pl)
+{
+	int n = pl->count;
+
+	if (n == 0)
+		return 1;
+
+	command_t *first = &pl->cmds[0];
+	if (n == 1 && !pl->background && !command_has_redirect(first) &&
+		is_builtin(first->argv[0]))
+		return run_builtin(first->argv);
+
+	pid_t pids[n];
+	int started = 0;
+	int in = STDIN_FILENO;
+
+	fflush(NULL);
+	change_terminal_attribute(0);
+
+	for (int i = 0; i < n; i++) {
+		int fds[2] = {-1, -1};
+
+		if (i < n - 1 && pipe(fds) == -1) {
+			perror("90s");
+			break;
+		}
+
+		pid_t pid = fork();
+		if (pid < 0) {
+			perror("90s");
+			if (fds[0] != -1) {
+				close(fds[0]);
+				close(fds[1]);
+			}
+			break;
+		}
+		if (pid == 0) {
+			if (in != STDIN_FILENO) {
+				dup2(in, STDIN_FILENO);
+				close(in);
+			}
+			if (fds[1] != -1) {
+				dup2(fds[1], STDOUT_FILENO);
+				close(fds[0]);
+				close(fds[1]);
+			}
+			exec_command(&pl->cmds[i]);
+		}
+
+		pids[started++] = pid;
+		if (in != STDIN_FILENO)
+			close(in);
+		if (fds[1] != -1) {
+			close(fds[1]);
+			in = fds[0];
+		}
+	}
+	if (in != STDIN_FILENO)
+		close(in);
+
+	if (pl->background && started > 0) {
+		char *name = pl->cmds[0].argv[0];
+		int job_index = add_job(pids[started - 1], name, true);
+		printf("[Job: %i] [Process ID: %i] [Command: %s]\n", job_index + 1,
+			   pids[started - 1], name);
+	} else {
+		for (int i = 0; i < started; i++)
+			waitpid(pids[i], NULL, 0);
+	}
+
+	change_terminal_attribute(1);
+	return 1;
+}
+
+static char *expand_aliases(const char *line)
+{
+	char *out = memalloc(1);
+	size_t out_len = 0;
+	const char *seg = line;
+	bool in_single = false, in_double = false;
+
+	out[0] = '\0';
+	for (const char *p = line;; p++) {
+		if (*p == '\\' && !in_single && p[1]) {
+			p++;
+			continue;
+		}
+		if (*p == '\'' && !in_double)
+			in_single = !in_single;
+		else if (*p == '"' && !in_single)
+			in_double = !in_double;
+		if (*p != '\0' && !(*p == '|' && !in_single && !in_double))
+			continue;
+
+		size_t seg_len = p - seg;
+		char *piece = memalloc(seg_len + 1);
+		memcpy(piece, seg, seg_len);
+		piece[seg_len] = '\0';
+		char *expanded = expand_segment(piece);
+		free(piece);
+
+		size_t add = strlen(expanded);
+		out = memrealloc(out, out_len + add + 2);
+		memcpy(out + out_len, expanded, add);
+		out_len += add;
+		free(expanded);
+		if (*p == '|')
+			out[out_len++] = '|';
+		out[out_len] = '\0';
+
+		if (*p == '\0')
+			break;
+		seg = p + 1;
+	}
+	return out;
+}
+
+int execute_line(const char *line)
+{
+	pipeline_t pl;
+	char *expanded = expand_aliases(line);
+	int status = 1;
+
+	if (parse_line(expanded, &pl) == 0) {
+		status = run_pipeline(&pl);
+		free_pipeline(&pl);
+	}
+	free(expanded);
+	return status;
 }

@@ -6,8 +6,7 @@
 int num_builtins(void);
 bool is_builtin(char *command);
 int launch(char **args, int fd, int options);
-int execute(char **args);
-int execute_pipe(char ***args);
+int execute_line(const char *line);
 
 extern char *builtin_cmds[];
 
