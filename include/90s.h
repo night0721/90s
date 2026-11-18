@@ -4,6 +4,7 @@
 #include <stdio.h>
 
 void *memalloc(size_t size);
-char **argsplit(char *line);
+void *memrealloc(void *old, size_t size);
+void change_terminal_attribute(int option);
 
 #endif

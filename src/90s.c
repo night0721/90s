@@ -1,6 +1,3 @@
-#define _XOPEN_SOURCE 700
-
-#include <ctype.h>
 #include <dirent.h>
 #include <limits.h>
 #include <signal.h>
@@ -19,6 +16,8 @@
 #include "constants.h"
 #include "git.h"
 #include "history.h"
+
+extern char *builtin_cmds[];
 
 void *memalloc(size_t size)
 {
@@ -624,158 +623,9 @@ char *readline(char **paths, const char *prompt)
 	}
 }
 
-void free_args(char **args)
-{
-	if (!args)
-		return;
-	for (int i = 0; args[i] != NULL; i++)
-		free(args[i]);
-	free(args);
-}
-
-// Split line into arguments
-char **argsplit(char *line)
-{
-	int bufsize = TOK_BUFSIZE, position = 0;
-	char **tokens = memalloc(sizeof(char *) * bufsize);
-	char *p = line;
-
-	while (*p) {
-		// skip leading whitespace
-		while (*p && isspace((unsigned char)*p))
-			p++;
-		if (!*p)
-			break;
-
-		int tok_cap = strlen(p) + 128;
-		char *token = memalloc(tok_cap);
-		int tok_pos = 0;
-		bool in_single = false;
-		bool in_double = false;
-
-		while (*p) {
-			// Escape sequences
-			if (!in_single && *p == '\\') {
-				p++;
-				if (*p)
-					token[tok_pos++] = *p++;
-				continue;
-			}
-			// Single quote
-			if (!in_double && *p == '\'') {
-				in_single = !in_single;
-				p++;
-				continue;
-			}
-			// Double quote
-			if (!in_single && *p == '"') {
-				in_double = !in_double;
-				p++;
-				continue;
-			}
-
-			if (*p == '~' && !in_single && !in_double) {
-				// Make sure prev token is space
-				if (tok_pos == 0 ||
-					isspace((unsigned char)token[tok_pos - 1])) {
-					char *home = getenv("HOME");
-					if (home) {
-						int home_len = strlen(home);
-						if (tok_pos + home_len >= tok_cap) {
-							tok_cap = tok_pos + home_len + 1;
-							token = memrealloc(token, tok_cap);
-						}
-						memcpy(token + tok_pos, home, home_len);
-						tok_pos += home_len;
-						p++;
-						continue;
-					}
-				}
-			}
-
-			if (!in_single && !in_double && isspace((unsigned char)*p))
-				break;
-			token[tok_pos++] = *p++;
-		}
-		token[tok_pos] = '\0';
-
-		tokens[position] = token;
-		position++;
-
-		if (position >= bufsize) {
-			bufsize += TOK_BUFSIZE;
-			tokens = memrealloc(tokens, sizeof(char *) * bufsize);
-		}
-	}
-	tokens[position] = NULL;
-	return tokens;
-}
-
-char **modifyargs(char **args)
-{
-	int num_arg = 0;
-
-	// check if command is ls, diff, or grep, if so, add --color=auto to the
-	// arguments so they have color without user typing it
-	while (args[num_arg] != NULL)
-		num_arg++;
-	for (int i = 0; i < num_arg; i++) {
-		if (strncmp(args[i], "ls", 2) == 0 ||
-			strncmp(args[i], "diff", 4) == 0 ||
-			strncmp(args[i], "grep", 4) == 0) {
-			for (int j = num_arg; j > i; j--)
-				args[j + 1] = args[j];
-			args[i + 1] = strdup("--color=auto");
-			num_arg++;
-		}
-	}
-
-	return args;
-}
-
-char *trimws(char *str)
-{
-	char *end;
-	while (isspace((unsigned char)*str))
-		str++;
-	if (*str == 0)
-		return str;
-	end = str + strlen(str) - 1;
-	while (end > str && isspace((unsigned char)*end))
-		end--;
-	*(end + 1) = 0;
-	return str;
-}
-
-char ***pipe_argsplit(char *line)
-{
-	char ***cmdv = memalloc(sizeof(char **) * 128);
-	char **cmds = memalloc(sizeof(char *) * 128);
-	int num_arg = 0;
-	char *pipe = strtok(line, "|");
-	while (pipe != NULL) {
-		pipe = trimws(pipe);
-		cmds[num_arg] = expand_segment(pipe);
-		pipe = strtok(NULL, "|");
-		num_arg++;
-	}
-	cmds[num_arg] = NULL;
-
-	for (int i = 0; i < num_arg; i++) {
-		char **splitted = argsplit(cmds[i]);
-		cmdv[i] = modifyargs(splitted);
-	}
-	cmdv[num_arg] = NULL;
-	for (int i = 0; i < num_arg; i++)
-		free(cmds[i]);
-	free(cmds);
-	return cmdv;
-}
-
 void command_loop(char **paths)
 {
 	char *line;
-	char **args;
 	int status = 1;
 
 	while (status) {
@@ -821,39 +671,7 @@ void command_loop(char **paths)
 		}
 		save_command_history(line);
 
-		char *expanded = expand_segment(line);
-		free(line);
-		line = expanded;
-
-		bool has_pipe = false;
-		bool in_single = false, in_double = false;
-		for (int k = 0; line[k] != '\0'; k++) {
-			if (line[k] == '\'' && !in_double) {
-				in_single = !in_single;
-			} else if (line[k] == '"' && !in_single) {
-				in_double = !in_double;
-			} else if (line[k] == '|' && !in_single && !in_double) {
-				has_pipe = true;
-				break;
-			}
-		}
-
-		if (has_pipe) {
-			char ***pipe_args = pipe_argsplit(line);
-			status = execute_pipe(pipe_args);
-
-			char ***tmp = pipe_args;
-			while (*tmp != NULL) {
-				free_args(*tmp);
-				tmp++;
-			}
-			free(pipe_args);
-		} else {
-			args = argsplit(line);
-			args = modifyargs(args);
-			status = launch(args, STDOUT_FILENO, OPT_FGJ);
-			free_args(args);
-		}
+		status = execute_line(line);
 		free(line);
 	}
 }
@@ -867,7 +685,7 @@ void quit_sig(int sig)
 void cleanup_terminal(void)
 {
 	change_terminal_attribute(0);
-	printf("\033[?25h"); // show cursor
+	printf("\033[?25h\n"); // show cursor
 	fflush(stdout);
 }
 
