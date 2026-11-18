@@ -1,6 +1,8 @@
 #ifndef HISTORY_H_
 #define HISTORY_H_
 
+#include <stdbool.h>
+
 extern int cmd_count;
 
 void save_command_history(char *args);
