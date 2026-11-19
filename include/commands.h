@@ -9,5 +9,6 @@ int launch(char **args, int fd, int options);
 int execute_line(const char *line);
 
 extern char *builtin_cmds[];
+extern int last_exit_code;
 
 #endif
