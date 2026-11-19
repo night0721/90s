@@ -16,8 +16,10 @@
 #include "constants.h"
 #include "git.h"
 #include "history.h"
+#include "runlog.h"
 
 extern char *builtin_cmds[];
+extern int last_exit_code;
 
 void *memalloc(size_t size)
 {
@@ -50,14 +52,19 @@ int get_terminal_width(void)
 void change_terminal_attribute(int option)
 {
 	static struct termios oldt, newt;
+	static bool saved;
+
 	if (option) {
-		tcgetattr(STDIN_FILENO, &oldt);
+		if (!saved) {
+			tcgetattr(STDIN_FILENO, &oldt);
+			saved = true;
+		}
 		newt = oldt;
 		// Allows getchar without pressing enter
 		newt.c_lflag &= ~(ICANON | ECHO);
 		// Set settings to stdin
 		tcsetattr(STDIN_FILENO, TCSANOW, &newt);
-	} else {
+	} else if (saved) {
 		// Restore to old settings
 		tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
 	}
@@ -570,6 +577,23 @@ char *readline(char **paths, const char *prompt)
 			break;
 		}
 
+		case 18: {
+			char *sel = histgrep_pick();
+
+			if (sel) {
+				size_t len = strlen(sel);
+
+				if (len + 1 >= bufsize) {
+					bufsize = len + 1 + RL_BUFSIZE;
+					buffer = memrealloc(buffer, bufsize);
+				}
+				memcpy(buffer, sel, len + 1);
+				position = len;
+				free(sel);
+			}
+			break;
+		}
+
 		case 27:
 			if (getchar() == '[') {
 				int arrow = getchar();
@@ -637,6 +661,8 @@ void command_loop(char **paths)
 		char cwd[PATH_MAX];
 		if (getcwd(cwd, PATH_MAX) == NULL)
 			return;
+		char full_cwd[PATH_MAX];
+		snprintf(full_cwd, sizeof(full_cwd), "%s", cwd);
 		char *home = getenv("HOME");
 
 		int i = 0, j = 0;
@@ -671,7 +697,15 @@ void command_loop(char **paths)
 		}
 		save_command_history(line);
 
+		struct timespec t0, t1;
+
+		clock_gettime(CLOCK_MONOTONIC, &t0);
 		status = execute_line(line);
+		clock_gettime(CLOCK_MONOTONIC, &t1);
+		runlog_append(line,
+					  (t1.tv_sec - t0.tv_sec) * 1000 +
+						  (t1.tv_nsec - t0.tv_nsec) / 1000000,
+					  last_exit_code, full_cwd);
 		free(line);
 	}
 }
