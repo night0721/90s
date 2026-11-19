@@ -15,6 +15,9 @@
 #include "history.h"
 #include "job.h"
 #include "parser.h"
+#include "runlog.h"
+
+int last_exit_code;
 
 int cd(char **args);
 int help(char **args);
@@ -26,11 +29,13 @@ int j(char **args);
 int bg(char **args);
 
 char *builtin_cmds[] = {
-	"cd", "help", "exit", "history", "export", "source", "j", "bg",
+	"cd", "help", "exit",	"history",	"export", "source",
+	"j",  "bg",	  "runlog", "histgrep", "cdhist",
 };
 
 int (*builtin_func[])(char **) = {
-	&cd, &help, &quit, &history, &export, &source, &j, &bg,
+	&cd, &help, &quit,	 &history,	&export, &source,
+	&j,	 &bg,	&runlog, &histgrep, &cdhist,
 };
 
 char *shortcut_dirs[] = {
@@ -67,7 +72,9 @@ bool is_builtin(char *command)
 	return false;
 }
 
-// autojump
+/*
+ *autojump
+ */
 int j(char **args)
 {
 	if (args[1] == NULL) {
@@ -94,9 +101,14 @@ int j(char **args)
 int cd(char **args)
 {
 	const char *target = args[1] ? args[1] : gethome();
+	char cwd[PATH_MAX];
 
-	if (chdir(target) != 0)
+	if (chdir(target) != 0) {
 		perror("90s");
+		return 1;
+	}
+	if (getcwd(cwd, sizeof(cwd)))
+		cdhist_append(cwd);
 	return 1;
 }
 
@@ -144,12 +156,12 @@ int export(char **args)
 		if (variable != NULL && value != NULL) {
 			if (setenv(variable, value, 1) != 0) {
 				fprintf(stderr, "90s: Error setting environment variable\n");
-				return 0;
+				return -1;
 			}
 		} else {
 			fprintf(stderr, "90s: Syntax error when setting environment "
 							"variable\nUse \"export VARIABLE=VALUE\"\n");
-			return 0;
+			return -1;
 		}
 		args++;
 	}
@@ -294,12 +306,19 @@ int run_pipeline(pipeline_t *pl)
 
 	command_t *first = &pl->cmds[0];
 	if (n == 1 && !pl->background && !command_has_redirect(first) &&
-		is_builtin(first->argv[0]))
-		return run_builtin(first->argv);
+		is_builtin(first->argv[0])) {
+		int rc = run_builtin(first->argv);
+
+		last_exit_code = rc < 0 ? 1 : 0;
+		return rc;
+	}
 
 	pid_t pids[n];
 	int started = 0;
 	int in = STDIN_FILENO;
+	int status = 0;
+
+	last_exit_code = 1;
 
 	fflush(NULL);
 	change_terminal_attribute(0);
@@ -350,9 +369,18 @@ int run_pipeline(pipeline_t *pl)
 		int job_index = add_job(pids[started - 1], name, true);
 		printf("[Job: %i] [Process ID: %i] [Command: %s]\n", job_index + 1,
 			   pids[started - 1], name);
+		last_exit_code = 0;
 	} else {
-		for (int i = 0; i < started; i++)
-			waitpid(pids[i], NULL, 0);
+		for (int i = 0; i < started; i++) {
+			int st;
+
+			waitpid(pids[i], &st, 0);
+			if (i == started - 1)
+				status = st;
+		}
+		if (started > 0)
+			last_exit_code = WIFEXITED(status) ? WEXITSTATUS(status)
+											   : 128 + WTERMSIG(status);
 	}
 
 	change_terminal_attribute(1);
@@ -411,6 +439,8 @@ int execute_line(const char *line)
 	if (parse_line(expanded, &pl) == 0) {
 		status = run_pipeline(&pl);
 		free_pipeline(&pl);
+	} else {
+		last_exit_code = 2;
 	}
 	free(expanded);
 	return status;
