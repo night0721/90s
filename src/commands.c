@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -277,8 +278,11 @@ static char **colorize(char **argv, int argc)
 	return out;
 }
 
-static void exec_command(command_t *c)
+void exec_command(command_t *c, bool background)
 {
+	signal(SIGINT, background ? SIG_IGN : SIG_DFL);
+	signal(SIGQUIT, background ? SIG_IGN : SIG_DFL);
+
 	if (apply_redirects(c) == -1)
 		_exit(1);
 
@@ -350,7 +354,7 @@ int run_pipeline(pipeline_t *pl)
 				close(fds[0]);
 				close(fds[1]);
 			}
-			exec_command(&pl->cmds[i]);
+			exec_command(&pl->cmds[i], pl->background);
 		}
 
 		pids[started++] = pid;

@@ -61,7 +61,7 @@ void change_terminal_attribute(int option)
 		}
 		newt = oldt;
 		// Allows getchar without pressing enter
-		newt.c_lflag &= ~(ICANON | ECHO);
+		newt.c_lflag &= ~(ICANON | ECHO | ISIG);
 		// Set settings to stdin
 		tcsetattr(STDIN_FILENO, TCSANOW, &newt);
 	} else if (saved) {
@@ -502,6 +502,11 @@ char *readline(char **paths, const char *prompt)
 			}
 			return buffer;
 
+		case 3:
+			printf("^C\n");
+			buffer[0] = '\0';
+			return buffer;
+
 		case 127:
 			if (position > 0) {
 				memmove(&buffer[position - 1], &buffer[position],
@@ -729,9 +734,9 @@ int main(int argc, char **argv)
 	(void)argv;
 	// setup
 	atexit(cleanup_terminal);
-	signal(SIGINT, quit_sig);
+	signal(SIGINT, SIG_IGN);
+	signal(SIGQUIT, SIG_IGN);
 	signal(SIGTERM, quit_sig);
-	signal(SIGQUIT, quit_sig);
 	check_history_file();
 	check_aliases_file();
 	char **paths = setup_path_variable();
