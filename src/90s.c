@@ -20,6 +20,7 @@
 
 extern char *builtin_cmds[];
 extern int last_exit_code;
+void reap_children(void);
 
 void *memalloc(size_t size)
 {
@@ -658,6 +659,7 @@ void command_loop(char **paths)
 	int status = 1;
 
 	while (status) {
+		reap_children();
 		time_t t = time(NULL);
 		struct tm *current_time = localtime(&t);
 		char timestr[256];

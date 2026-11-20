@@ -18,7 +18,14 @@
 #include "parser.h"
 #include "runlog.h"
 
+#define BG_MAX 64
+
 int last_exit_code;
+
+static struct {
+	pid_t pid;
+	char *name;
+} bg_table[BG_MAX];
 
 int cd(char **args);
 int help(char **args);
@@ -216,6 +223,42 @@ int bg(char **args)
 	return 1;
 }
 
+static void bg_remember(pid_t pid, const char *name)
+{
+	size_t len = strlen(name) + 1;
+
+	for (int i = 0; i < BG_MAX; i++) {
+		if (bg_table[i].pid != 0)
+			continue;
+		bg_table[i].pid = pid;
+		bg_table[i].name = memalloc(len);
+		memcpy(bg_table[i].name, name, len);
+		return;
+	}
+}
+
+void reap_children(void)
+{
+	pid_t pid;
+	int st;
+
+	while ((pid = waitpid(-1, &st, WNOHANG)) > 0) {
+		for (int i = 0; i < BG_MAX; i++) {
+			if (bg_table[i].pid != pid)
+				continue;
+			if (WIFEXITED(st) && WEXITSTATUS(st) == 0)
+				printf("[Done] %d %s\n", (int)pid, bg_table[i].name);
+			else
+				printf("[Exit %d] %d %s\n",
+					   WIFEXITED(st) ? WEXITSTATUS(st) : 128 + WTERMSIG(st),
+					   (int)pid, bg_table[i].name);
+			free(bg_table[i].name);
+			bg_table[i].pid = 0;
+			break;
+		}
+	}
+}
+
 static int run_builtin(char **args)
 {
 	for (int i = 0; i < num_builtins(); i++) {
@@ -373,6 +416,7 @@ int run_pipeline(pipeline_t *pl)
 		int job_index = add_job(pids[started - 1], name, true);
 		printf("[Job: %i] [Process ID: %i] [Command: %s]\n", job_index + 1,
 			   pids[started - 1], name);
+		bg_remember(pids[started - 1], name);
 		last_exit_code = 0;
 	} else {
 		for (int i = 0; i < started; i++) {
