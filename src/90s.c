@@ -100,18 +100,177 @@ char **setup_path_variable(void)
 	return paths;
 }
 
+typedef struct {
+	char **slot;
+	size_t cap;
+	size_t count;
+	char *path;
+	char **dirs;
+	struct timespec *mtimes;
+	int ndirs;
+} cmd_cache_t;
+
+static cmd_cache_t cache;
+
+static unsigned long
+hash_str(const char *s)
+{
+	unsigned long h = 5381;
+
+	for (; *s; s++)
+		h = h * 33 + (unsigned char)*s;
+	return h;
+}
+
+static char *
+dup_str(const char *s)
+{
+	size_t n = strlen(s) + 1;
+	char *p = memalloc(n);
+
+	memcpy(p, s, n);
+	return p;
+}
+
+static void
+cache_put(char *name)
+{
+	size_t i = hash_str(name) & (cache.cap - 1);
+
+	while (cache.slot[i]) {
+		if (strcmp(cache.slot[i], name) == 0) {
+			free(name);
+			return;
+		}
+		i = (i + 1) & (cache.cap - 1);
+	}
+	cache.slot[i] = name;
+	cache.count++;
+}
+
+static void
+cache_grow(void)
+{
+	char **old = cache.slot;
+	size_t old_cap = cache.cap;
+
+	cache.cap *= 2;
+	cache.slot = memalloc(sizeof(char *) * cache.cap);
+	memset(cache.slot, 0, sizeof(char *) * cache.cap);
+	cache.count = 0;
+	for (size_t i = 0; i < old_cap; i++) {
+		if (old[i])
+			cache_put(old[i]);
+	}
+	free(old);
+}
+
+static void
+cache_clear(void)
+{
+	for (size_t i = 0; i < cache.cap; i++)
+		free(cache.slot[i]);
+	free(cache.slot);
+	for (int i = 0; i < cache.ndirs; i++)
+		free(cache.dirs[i]);
+	free(cache.dirs);
+	free(cache.mtimes);
+	free(cache.path);
+	memset(&cache, 0, sizeof(cache));
+}
+
+static void
+cache_build(const char *path)
+{
+	char *copy = dup_str(path), *tok, *save;
+	int max_dirs = 1;
+
+	cache_clear();
+	for (const char *c = path; *c; c++) {
+		if (*c == ':')
+			max_dirs++;
+	}
+	cache.path = dup_str(path);
+	cache.dirs = memalloc(sizeof(char *) * max_dirs);
+	cache.mtimes = memalloc(sizeof(struct timespec) * max_dirs);
+	cache.cap = 1024;
+	cache.slot = memalloc(sizeof(char *) * cache.cap);
+	memset(cache.slot, 0, sizeof(char *) * cache.cap);
+
+	for (tok = strtok_r(copy, ":", &save); tok; tok = strtok_r(NULL, ":", &save)) {
+		struct stat st;
+		struct dirent *e;
+		int idx = cache.ndirs++;
+		DIR *d;
+
+		cache.dirs[idx] = dup_str(tok);
+		memset(&cache.mtimes[idx], 0, sizeof(struct timespec));
+		if (stat(tok, &st) == 0)
+			cache.mtimes[idx] = st.st_mtim;
+		d = opendir(tok);
+		if (!d)
+			continue;
+		while ((e = readdir(d)) != NULL) {
+			char full[PATH_MAX];
+
+			if (strcmp(e->d_name, ".") == 0 || strcmp(e->d_name, "..") == 0)
+				continue;
+			snprintf(full, sizeof(full), "%s/%s", tok, e->d_name);
+			if (stat(full, &st) != 0 || !S_ISREG(st.st_mode) || access(full, X_OK) != 0)
+				continue;
+			if (cache.count * 2 >= cache.cap)
+				cache_grow();
+			cache_put(dup_str(e->d_name));
+		}
+		closedir(d);
+	}
+	free(copy);
+}
+
+/* rebuilds only when $PATH changed or one of its directories was modified */
+static void
+cmd_cache_refresh(void)
+{
+	const char *path = getenv("PATH");
+	bool stale = false;
+
+	if (!path)
+		path = "";
+	if (!cache.path || strcmp(cache.path, path) != 0)
+		stale = true;
+	for (int i = 0; !stale && i < cache.ndirs; i++) {
+		struct stat st;
+
+		if (stat(cache.dirs[i], &st) != 0) {
+			stale = cache.mtimes[i].tv_sec != 0 || cache.mtimes[i].tv_nsec != 0;
+		} else {
+			stale = st.st_mtim.tv_sec != cache.mtimes[i].tv_sec
+				|| st.st_mtim.tv_nsec != cache.mtimes[i].tv_nsec;
+		}
+	}
+	if (stale)
+		cache_build(path);
+}
+
 bool find_command(char **paths, char *command)
 {
+	struct stat st;
+	size_t i;
+
+	(void) paths;
 	if (command[0] == '\0')
 		return false;
 	if (is_builtin(command))
 		return true;
-	while (*paths != NULL) {
-		char current_path[PATH_MAX];
-		snprintf(current_path, sizeof(current_path), "%s/%s", *paths, command);
-		if (access(current_path, X_OK) == 0)
+	if (strchr(command, '/'))
+		return stat(command, &st) == 0 && S_ISREG(st.st_mode) && access(command, X_OK) == 0;
+	if (!cache.slot)
+		cmd_cache_refresh();
+	i = hash_str(command) & (cache.cap - 1);
+	while (cache.slot[i]) {
+		if (strcmp(cache.slot[i], command) == 0)
 			return true;
-		paths++;
+		i = (i + 1) & (cache.cap - 1);
 	}
 	return false;
 }
@@ -394,24 +553,12 @@ static char **complete_command(char **paths, const char *prefix, int *count)
 			push_match(&matches, &n, &cap, builtin_cmds[i]);
 	}
 
-	for (char **p = paths; *p != NULL; p++) {
-		DIR *dir = opendir(*p);
-		if (!dir)
-			continue;
-		struct dirent *entry;
-		while ((entry = readdir(dir)) != NULL) {
-			if (!has_prefix(entry->d_name, prefix))
-				continue;
-			char full[PATH_MAX];
-			snprintf(full, sizeof(full), "%s/%s", *p, entry->d_name);
-			if (access(full, X_OK) != 0)
-				continue;
-			struct stat st;
-			if (stat(full, &st) != 0 || !S_ISREG(st.st_mode))
-				continue;
-			push_match(&matches, &n, &cap, entry->d_name);
-		}
-		closedir(dir);
+	(void) paths;
+	if (!cache.slot)
+		cmd_cache_refresh();
+	for (size_t i = 0; i < cache.cap; i++) {
+		if (cache.slot[i] && has_prefix(cache.slot[i], prefix))
+			push_match(&matches, &n, &cap, cache.slot[i]);
 	}
 
 	dedup_matches(matches, &n);
@@ -720,6 +867,7 @@ char *readline(char **paths, const char *prompt)
 	bool tab_repeat = false;
 	char last_tab_token[PATH_MAX] = "";
 
+	cmd_cache_refresh();
 	fputs("\033[?2004h", stdout);
 	printf("%s", prompt);
 	fflush(stdout);
