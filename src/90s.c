@@ -550,6 +550,121 @@ static char *insert_at(char *buffer, size_t *bufsize, int *position,
 	return buffer;
 }
 
+enum {
+	KEY_NONE,
+	KEY_UP,
+	KEY_DOWN,
+	KEY_RIGHT,
+	KEY_LEFT,
+	KEY_PASTE,
+};
+
+static int read_escape(void)
+{
+	char params[16];
+	int n = 0, c = getchar();
+
+	if (c != '[')
+		return KEY_NONE;
+	while ((c = getchar()) != EOF) {
+		if (c >= 0x40 && c <= 0x7E)
+			break;
+		if (n < (int)sizeof(params) - 1)
+			params[n++] = c;
+	}
+	params[n] = '\0';
+
+	switch (c) {
+	case 'A':
+		return KEY_UP;
+	case 'B':
+		return KEY_DOWN;
+	case 'C':
+		return KEY_RIGHT;
+	case 'D':
+		return KEY_LEFT;
+	case '~':
+		if (strcmp(params, "200") == 0)
+			return KEY_PASTE;
+		break;
+	}
+	return KEY_NONE;
+}
+
+/* newlines become "; ", a trailing backslash joins lines, tabs become spaces */
+static char *normalize_paste(const char *raw)
+{
+	char *out = memalloc(2 * strlen(raw) + 3);
+	size_t n = 0;
+	bool cont = false;
+	const char *p = raw;
+
+	while (*p) {
+		const char *eol = p + strcspn(p, "\r\n");
+		const char *end = eol;
+		bool next_cont = false;
+
+		while (p < end && (*p == ' ' || *p == '\t'))
+			p++;
+		while (end > p && (end[-1] == ' ' || end[-1] == '\t'))
+			end--;
+		if (end > p && end[-1] == '\\') {
+			next_cont = true;
+			end--;
+			while (end > p && (end[-1] == ' ' || end[-1] == '\t'))
+				end--;
+		}
+		if (end > p) {
+			if (n > 0) {
+				if (cont) {
+					out[n++] = ' ';
+				} else {
+					out[n++] = ';';
+					out[n++] = ' ';
+				}
+			}
+			for (; p < end; p++) {
+				unsigned char c = *p;
+
+				if (c == '\t')
+					out[n++] = ' ';
+				else if (c >= 32 && c != 127)
+					out[n++] = c;
+			}
+			cont = next_cont;
+		}
+		p = eol;
+		while (*p == '\r' || *p == '\n')
+			p++;
+	}
+	out[n] = '\0';
+	return out;
+}
+
+static char *read_paste(void)
+{
+	static const char end[] = "\033[201~";
+	size_t cap = 256, n = 0, elen = sizeof(end) - 1;
+	char *raw = memalloc(cap), *text;
+	int c;
+
+	while ((c = getchar()) != EOF) {
+		if (n + 2 > cap) {
+			cap *= 2;
+			raw = memrealloc(raw, cap);
+		}
+		raw[n++] = c;
+		if (n >= elen && memcmp(raw + n - elen, end, elen) == 0) {
+			n -= elen;
+			break;
+		}
+	}
+	raw[n] = '\0';
+	text = normalize_paste(raw);
+	free(raw);
+	return text;
+}
+
 char *readline(char **paths, const char *prompt)
 {
 	size_t bufsize = RL_BUFSIZE;
@@ -561,6 +676,7 @@ char *readline(char **paths, const char *prompt)
 	bool tab_repeat = false;
 	char last_tab_token[PATH_MAX] = "";
 
+	fputs("\033[?2004h", stdout);
 	printf("%s", prompt);
 	fflush(stdout);
 
@@ -592,9 +708,11 @@ char *readline(char **paths, const char *prompt)
 					break;
 				}
 			}
+			fputs("\033[?2004l", stdout);
 			return buffer;
 
 		case 3:
+			fputs("\033[?2004l", stdout);
 			printf("^C\n");
 			buffer[0] = '\0';
 			return buffer;
@@ -664,7 +782,8 @@ char *readline(char **paths, const char *prompt)
 					const char *remainder = lcp + strlen(typed);
 					buffer = insert_at(buffer, &bufsize, &position, remainder,
 									   strlen(remainder));
-					snprintf(next_token, sizeof(next_token), "%s%s", token, remainder);
+					snprintf(next_token, sizeof(next_token), "%s%s", token,
+							 remainder);
 					tab_repeat = true;
 				} else if (tab_repeat && strcmp(last_tab_token, token) == 0) {
 					print_matches(matches, count);
@@ -697,30 +816,44 @@ char *readline(char **paths, const char *prompt)
 		}
 
 		case 27:
-			if (getchar() == '[') {
-				int arrow = getchar();
-				if (arrow == 'A') { // Up - history
-					char *hist = read_command(1);
-					if (hist) {
-						strncpy(buffer, hist, bufsize - 1);
-						buffer[bufsize - 1] = '\0';
-						position = strlen(buffer);
-					}
-				} else if (arrow == 'B') { // Down
-					char *hist = read_command(0);
-					if (hist) {
-						strncpy(buffer, hist, bufsize - 1);
-						buffer[bufsize - 1] = '\0';
-						position = strlen(buffer);
-					} else {
-						buffer[0] = '\0';
-						position = 0;
-					}
-				} else if (arrow == 'C') { // Right
-					position = next_char(buffer, position, buf_len);
-				} else if (arrow == 'D') { // Left
-					position = prev_char(buffer, position);
+			switch (read_escape()) {
+			case KEY_UP: {
+				char *hist = read_command(1);
+
+				if (hist) {
+					strncpy(buffer, hist, bufsize - 1);
+					buffer[bufsize - 1] = '\0';
+					position = strlen(buffer);
 				}
+				break;
+			}
+			case KEY_DOWN: {
+				char *hist = read_command(0);
+
+				if (hist) {
+					strncpy(buffer, hist, bufsize - 1);
+					buffer[bufsize - 1] = '\0';
+					position = strlen(buffer);
+				} else {
+					buffer[0] = '\0';
+					position = 0;
+				}
+				break;
+			}
+			case KEY_RIGHT:
+				position = next_char(buffer, position, buf_len);
+				break;
+			case KEY_LEFT:
+				position = prev_char(buffer, position);
+				break;
+			case KEY_PASTE: {
+				char *text = read_paste();
+
+				buffer =
+					insert_at(buffer, &bufsize, &position, text, strlen(text));
+				free(text);
+				break;
+			}
 			}
 			break;
 
@@ -838,7 +971,7 @@ void quit_sig(int sig)
 void cleanup_terminal(void)
 {
 	change_terminal_attribute(0);
-	printf("\033[?25h\n"); // show cursor
+	printf("\033[?2004l\033[?25h\n"); // show cursor
 	fflush(stdout);
 }
 
