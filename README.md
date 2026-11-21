@@ -26,6 +26,10 @@ Minimalist, customizable shell written in C99 with syntax highlighting and no de
 - Frecency-based directory navigation history (`cdhist`)
 - Structured history search and filtering (`histgrep`)
 - Interactive history search via `Ctrl+R` (`neo` integration)
+- Auto suggestions
+- Ctrl-<> keys to move around
+- Paste
+- UTF8
 
 ## Built in commands
 - cd
