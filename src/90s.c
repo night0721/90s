@@ -631,7 +631,9 @@ char *readline(char **paths, const char *prompt)
 			}
 
 			const char *typed = is_cmd ? token : basepart;
+			char next_token[PATH_MAX];
 
+			snprintf(next_token, sizeof(next_token), "%s", token);
 			if (count == 1) {
 				const char *remainder = matches[0] + strlen(typed);
 				buffer = insert_at(buffer, &bufsize, &position, remainder,
@@ -662,7 +664,8 @@ char *readline(char **paths, const char *prompt)
 					const char *remainder = lcp + strlen(typed);
 					buffer = insert_at(buffer, &bufsize, &position, remainder,
 									   strlen(remainder));
-					tab_repeat = false;
+					snprintf(next_token, sizeof(next_token), "%s%s", token, remainder);
+					tab_repeat = true;
 				} else if (tab_repeat && strcmp(last_tab_token, token) == 0) {
 					print_matches(matches, count);
 					prev_lines = 1;
@@ -671,7 +674,7 @@ char *readline(char **paths, const char *prompt)
 				}
 			}
 
-			snprintf(last_tab_token, sizeof(last_tab_token), "%s", token);
+			snprintf(last_tab_token, sizeof(last_tab_token), "%s", next_token);
 			free_str_array(matches, count);
 			break;
 		}
