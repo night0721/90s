@@ -557,12 +557,26 @@ enum {
 	KEY_RIGHT,
 	KEY_LEFT,
 	KEY_PASTE,
+	KEY_HOME,
+	KEY_END,
+	KEY_DELETE,
+	KEY_WORD_LEFT,
+	KEY_WORD_RIGHT,
 };
 
 static int read_escape(void)
 {
 	char params[16];
 	int n = 0, c = getchar();
+
+	if (c == 'b')
+		return KEY_WORD_LEFT;
+	if (c == 'f')
+		return KEY_WORD_RIGHT;
+	if (c == 'O') {
+		c = getchar();
+		return c == 'H' ? KEY_HOME : c == 'F' ? KEY_END : KEY_NONE;
+	}
 
 	if (c != '[')
 		return KEY_NONE;
@@ -580,15 +594,45 @@ static int read_escape(void)
 	case 'B':
 		return KEY_DOWN;
 	case 'C':
-		return KEY_RIGHT;
+		return strstr(params, ";5") || strstr(params, ";3") ? KEY_WORD_RIGHT
+															: KEY_RIGHT;
 	case 'D':
-		return KEY_LEFT;
+		return strstr(params, ";5") || strstr(params, ";3") ? KEY_WORD_LEFT
+															: KEY_LEFT;
+	case 'H':
+		return KEY_HOME;
+	case 'F':
+		return KEY_END;
 	case '~':
 		if (strcmp(params, "200") == 0)
 			return KEY_PASTE;
+		if (strcmp(params, "1") == 0 || strcmp(params, "7") == 0)
+			return KEY_HOME;
+		if (strcmp(params, "4") == 0 || strcmp(params, "8") == 0)
+			return KEY_END;
+		if (strcmp(params, "3") == 0)
+			return KEY_DELETE;
 		break;
 	}
 	return KEY_NONE;
+}
+
+static int word_left(const char *buf, int pos)
+{
+	while (pos > 0 && buf[pos - 1] == ' ')
+		pos--;
+	while (pos > 0 && buf[pos - 1] != ' ')
+		pos--;
+	return pos;
+}
+
+static int word_right(const char *buf, int pos, int len)
+{
+	while (pos < len && buf[pos] == ' ')
+		pos++;
+	while (pos < len && buf[pos] != ' ')
+		pos++;
+	return pos;
 }
 
 /* newlines become "; ", a trailing backslash joins lines, tabs become spaces */
@@ -710,6 +754,30 @@ char *readline(char **paths, const char *prompt)
 			}
 			fputs("\033[?2004l", stdout);
 			return buffer;
+
+		case 1: /* Ctrl+A */
+			position = 0;
+			break;
+
+		case 5: /* Ctrl+E */
+			position = buf_len;
+			break;
+
+		case 11: /* Ctrl+K */
+			buffer[position] = '\0';
+			break;
+
+		case 21: /* Ctrl+U */
+			memmove(buffer, &buffer[position], buf_len - position + 1);
+			position = 0;
+			break;
+
+		case 23: /* Ctrl+W */ {
+			int start = word_left(buffer, position);
+			memmove(&buffer[start], &buffer[position], buf_len - position + 1);
+			position = start;
+			break;
+		}
 
 		case 3:
 			fputs("\033[?2004l", stdout);
@@ -854,6 +922,25 @@ char *readline(char **paths, const char *prompt)
 				free(text);
 				break;
 			}
+			case KEY_HOME:
+				position = 0;
+				break;
+			case KEY_END:
+				position = buf_len;
+				break;
+			case KEY_DELETE:
+				if (position < buf_len) {
+					int end = next_char(buffer, position, buf_len);
+
+					memmove(&buffer[position], &buffer[end], buf_len - end + 1);
+				}
+				break;
+			case KEY_WORD_LEFT:
+				position = word_left(buffer, position);
+				break;
+			case KEY_WORD_RIGHT:
+				position = word_right(buffer, position, buf_len);
+				break;
 			}
 			break;
 
