@@ -1,6 +1,7 @@
 #define _XOPEN_SOURCE 700
 
 #include <ctype.h>
+#include <glob.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <pwd.h>
@@ -72,6 +73,14 @@ push_arg(command_t *c, char *word)
 	c->argv[c->argc] = NULL;
 }
 
+static void
+emit(char *word, size_t *n, char c, bool literal)
+{
+	if (literal && strchr("*?[\\", c))
+		word[(*n)++] = QUOTE_MARK;
+	word[(*n)++] = c;
+}
+
 static size_t
 var_name_len(const char *q)
 {
@@ -125,11 +134,9 @@ read_word(const char **pp)
 	if (*p == '~')
 		dir = tilde_dir(&p);
 	dir_len = dir ? strlen(dir) : 0;
-	word = memalloc(2 * strlen(p) + dir_len + 2);
-	if (dir) {
-		memcpy(word, dir, dir_len);
-		n = dir_len;
-	}
+	word = memalloc(2 * strlen(p) + 2 * dir_len + 2);
+	for (size_t i = 0; i < dir_len; i++)
+		emit(word, &n, dir[i], true);
 
 	while (*p) {
 		if (!in_single && !in_double && is_word_end(p))
@@ -141,7 +148,7 @@ read_word(const char **pp)
 			in_double = !in_double;
 			p++;
 		} else if (*p == '\\' && !in_single && p[1]) {
-			word[n++] = p[1];
+			emit(word, &n, p[1], true);
 			p += 2;
 		} else if (*p == '$' && !in_single) {
 			const char *name = p + 1;
@@ -161,7 +168,8 @@ read_word(const char **pp)
 			word[n++] = VAR_CLOSE;
 			p = name + len + (braced ? 1 : 0);
 		} else {
-			word[n++] = *p++;
+			emit(word, &n, *p, in_single || in_double || *p == '\\');
+			p++;
 		}
 	}
 
@@ -360,6 +368,16 @@ fail:
 }
 
 static char *
+dup_str(const char *s)
+{
+	size_t n = strlen(s) + 1;
+	char *p = memalloc(n);
+
+	memcpy(p, s, n);
+	return p;
+}
+
+static char *
 expand_word(const char *w, int status, bool *drop)
 {
 	size_t cap = strlen(w) + 32, n = 0;
@@ -390,12 +408,12 @@ expand_word(const char *w, int status, bool *drop)
 					val = "";
 			}
 			vlen = strlen(val);
-			if (n + vlen + 2 > cap) {
-				cap = (n + vlen + 2) * 2;
+			if (n + 2 * vlen + 2 > cap) {
+				cap = (n + 2 * vlen + 2) * 2;
 				out = memrealloc(out, cap);
 			}
-			memcpy(out + n, val, vlen);
-			n += vlen;
+			for (size_t i = 0; i < vlen; i++)
+				emit(out, &n, val[i], true);
 			had_ref = true;
 			if (*w == VAR_QOPEN)
 				only_refs = false;
@@ -414,17 +432,61 @@ expand_word(const char *w, int status, bool *drop)
 	return out;
 }
 
+static bool
+has_glob(const char *w)
+{
+	for (; *w; w++) {
+		if (*w == QUOTE_MARK && w[1])
+			w++;
+		else if (strchr("*?[", *w))
+			return true;
+	}
+	return false;
+}
+
+/* drops the quote markers; with as_pattern, keeps them as glob backslash escapes */
+static char *
+unmark(const char *w, bool as_pattern)
+{
+	char *out = memalloc(2 * strlen(w) + 1);
+	size_t n = 0;
+
+	while (*w) {
+		if (*w == QUOTE_MARK && w[1]) {
+			if (as_pattern)
+				out[n++] = '\\';
+			w++;
+		}
+		out[n++] = *w++;
+	}
+	out[n] = '\0';
+	return out;
+}
+
 static void
 expand_file(char **file, int status)
 {
 	bool drop;
-	char *e;
+	char *e, *plain;
 
 	if (!*file)
 		return;
 	e = expand_word(*file, status, &drop);
+	plain = unmark(e, false);
+	free(e);
 	free(*file);
-	*file = e;
+	*file = plain;
+}
+
+static void
+argv_push(command_t *c, char *s)
+{
+	if (c->argc + 2 > c->argv_cap) {
+		c->argv_cap *= 2;
+		c->argv = memrealloc(c->argv, sizeof(char *) * c->argv_cap);
+	}
+	c->argv[c->argc++] = s;
+	c->argv[c->argc] = NULL;
 }
 
 void
@@ -432,21 +494,41 @@ expand_pipeline(pipeline_t *pl, int status)
 {
 	for (int i = 0; i < pl->count; i++) {
 		command_t *c = &pl->cmds[i];
-		int k = 0;
+		char **old = c->argv;
+		int old_argc = c->argc;
 
-		for (int j = 0; j < c->argc; j++) {
+		c->argv_cap = 8;
+		c->argv = memalloc(sizeof(char *) * c->argv_cap);
+		c->argv[0] = NULL;
+		c->argc = 0;
+
+		for (int j = 0; j < old_argc; j++) {
 			bool drop;
-			char *e = expand_word(c->argv[j], status, &drop);
+			char *e = expand_word(old[j], status, &drop);
+			glob_t g;
 
-			free(c->argv[j]);
+			free(old[j]);
 			if (drop) {
 				free(e);
 				continue;
 			}
-			c->argv[k++] = e;
+			if (has_glob(e)) {
+				char *pat = unmark(e, true);
+				int rc = glob(pat, 0, NULL, &g);
+
+				free(pat);
+				if (rc == 0) {
+					for (size_t k = 0; k < g.gl_pathc; k++)
+						argv_push(c, dup_str(g.gl_pathv[k]));
+					globfree(&g);
+					free(e);
+					continue;
+				}
+			}
+			argv_push(c, unmark(e, false));
+			free(e);
 		}
-		c->argc = k;
-		c->argv[k] = NULL;
+		free(old);
 		expand_file(&c->in_file, status);
 		expand_file(&c->out_file, status);
 		expand_file(&c->err_file, status);

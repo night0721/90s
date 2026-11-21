@@ -6,6 +6,7 @@
 #define VAR_OPEN '\x01'
 #define VAR_QOPEN '\x04'
 #define VAR_CLOSE '\x02'
+#define QUOTE_MARK '\x05'
 
 typedef struct {
 	char **argv;
@@ -43,7 +44,7 @@ typedef struct {
 /* returns 0 on success (count may be 0 for empty line), -1 on syntax error */
 int parse_list(const char *line, list_t *l);
 void free_list(list_t *l);
-/* run-time expansion of $VAR, ${VAR}, $?, $$ markers left by the parser */
+/* run-time expansion of $VAR, ${VAR}, $?, $$ markers and globs left by the parser */
 void expand_pipeline(pipeline_t *pl, int status);
 void free_pipeline(pipeline_t *pl);
 bool command_has_redirect(const command_t *c);
