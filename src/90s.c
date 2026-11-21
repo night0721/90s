@@ -1,5 +1,7 @@
+#include <ctype.h>
 #include <dirent.h>
 #include <limits.h>
+#include <locale.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -10,6 +12,7 @@
 #include <termios.h>
 #include <time.h>
 #include <unistd.h>
+#include <wchar.h>
 
 #include "alias.h"
 #include "commands.h"
@@ -113,24 +116,111 @@ bool find_command(char **paths, char *command)
 	return false;
 }
 
+static int utf8_seq_len(unsigned char lead)
+{
+	if (lead >= 0xF0 && lead <= 0xF4)
+		return 4;
+	if (lead >= 0xE0 && lead <= 0xEF)
+		return 3;
+	if (lead >= 0xC2 && lead <= 0xDF)
+		return 2;
+	return 1;
+}
+
+static size_t utf8_decode(const char *s, size_t n, unsigned *cp)
+{
+	unsigned char c = s[0];
+	size_t len = utf8_seq_len(c);
+	unsigned v;
+
+	if (len == 1) {
+		*cp = c < 0x80 ? c : 0xFFFD;
+		return 1;
+	}
+	if (len > n) {
+		*cp = 0xFFFD;
+		return 1;
+	}
+	v = c & (0xFF >> (len + 1));
+	for (size_t i = 1; i < len; i++) {
+		if (((unsigned char)s[i] & 0xC0) != 0x80) {
+			*cp = 0xFFFD;
+			return 1;
+		}
+		v = (v << 6) | ((unsigned char)s[i] & 0x3F);
+	}
+	*cp = v;
+	return len;
+}
+
+static int cp_width(unsigned cp)
+{
+	int w;
+
+	if (cp < 0x80)
+		return cp >= 32 && cp != 127;
+	w = wcwidth((wchar_t)cp);
+	return w < 0 ? 0 : w;
+}
+
+static int display_width(const char *s, size_t n)
+{
+	int w = 0;
+	size_t i = 0;
+
+	while (i < n) {
+		unsigned cp;
+
+		i += utf8_decode(s + i, n - i, &cp);
+		w += cp_width(cp);
+	}
+	return w;
+}
+
+static int prev_char(const char *buf, int pos)
+{
+	if (pos <= 0)
+		return 0;
+	pos--;
+	while (pos > 0 && ((unsigned char)buf[pos] & 0xC0) == 0x80)
+		pos--;
+	return pos;
+}
+
+static int next_char(const char *buf, int pos, int len)
+{
+	if (pos >= len)
+		return len;
+	pos++;
+	while (pos < len && ((unsigned char)buf[pos] & 0xC0) == 0x80)
+		pos++;
+	return pos;
+}
+
 int prompt_visible_length(const char *str)
 {
 	int len = 0;
 	int in_esc = 0;
+	size_t i = 0, n;
 
 	if (!str)
 		return 0;
 
-	while (*str) {
-		if (*str == '\033') {
+	n = strlen(str);
+	while (i < n) {
+		unsigned cp;
+
+		if (str[i] == '\033') {
 			in_esc = 1;
+			i++;
 		} else if (in_esc) {
-			if ((*str >= 'A' && *str <= 'Z') || (*str >= 'a' && *str <= 'z'))
+			if (isalpha((unsigned char)str[i]))
 				in_esc = 0;
+			i++;
 		} else {
-			len++;
+			i += utf8_decode(str + i, n - i, &cp);
+			len += cp_width(cp);
 		}
-		str++;
 	}
 
 	return len;
@@ -229,7 +319,7 @@ void render(const char *prompt, const char *buffer, int cursor_pos,
 	highlight(buffer, paths);
 
 	// Calculate where cursor should be
-	int total_visible = prompt_visible + cursor_pos;
+	int total_visible = prompt_visible + display_width(buffer, cursor_pos);
 	int target_line = total_visible / width;
 	int target_col = total_visible % width;
 
@@ -242,7 +332,7 @@ void render(const char *prompt, const char *buffer, int cursor_pos,
 	fflush(stdout);
 
 	// Update prev_lines for next render
-	int new_total = prompt_visible + strlen(buffer);
+	int new_total = prompt_visible + display_width(buffer, strlen(buffer));
 	*prev_lines_out = new_total / width + (new_total % width ? 1 : 0);
 	if (*prev_lines_out < 1)
 		*prev_lines_out = 1;
@@ -407,7 +497,7 @@ static void print_matches(char **matches, int count)
 	int width = get_terminal_width();
 	int maxlen = 0;
 	for (int i = 0; i < count; i++) {
-		int l = strlen(matches[i]);
+		int l = display_width(matches[i], strlen(matches[i]));
 		if (l > maxlen)
 			maxlen = l;
 	}
@@ -418,7 +508,8 @@ static void print_matches(char **matches, int count)
 
 	printf("\n");
 	for (int i = 0; i < count; i++) {
-		printf("%-*s", colwidth, matches[i]);
+		printf("%s%*s", matches[i],
+			   colwidth - display_width(matches[i], strlen(matches[i])), "");
 		if ((i + 1) % cols == 0)
 			printf("\n");
 	}
@@ -510,9 +601,11 @@ char *readline(char **paths, const char *prompt)
 
 		case 127:
 			if (position > 0) {
-				memmove(&buffer[position - 1], &buffer[position],
+				int start = prev_char(buffer, position);
+
+				memmove(&buffer[start], &buffer[position],
 						buf_len - position + 1);
-				position--;
+				position = start;
 			}
 			break;
 
@@ -621,11 +714,9 @@ char *readline(char **paths, const char *prompt)
 						position = 0;
 					}
 				} else if (arrow == 'C') { // Right
-					if (position < buf_len)
-						position++;
+					position = next_char(buffer, position, buf_len);
 				} else if (arrow == 'D') { // Left
-					if (position > 0)
-						position--;
+					position = prev_char(buffer, position);
 				}
 			}
 			break;
@@ -641,6 +732,24 @@ char *readline(char **paths, const char *prompt)
 					buffer[position] = c;
 				}
 				position++;
+			} else if (c >= 0xC2 && c <= 0xF4) {
+				char seq[4];
+				int len = utf8_seq_len(c), k;
+
+				seq[0] = c;
+				for (k = 1; k < len; k++) {
+					int d = getchar();
+
+					if (d == EOF)
+						exit(EXIT_SUCCESS);
+					if ((d & 0xC0) != 0x80) {
+						ungetc(d, stdin);
+						break;
+					}
+					seq[k] = d;
+				}
+				if (k == len)
+					buffer = insert_at(buffer, &bufsize, &position, seq, len);
 			}
 		}
 
@@ -734,6 +843,8 @@ int main(int argc, char **argv)
 {
 	(void)argc;
 	(void)argv;
+	if (!setlocale(LC_CTYPE, "") || MB_CUR_MAX == 1)
+		setlocale(LC_CTYPE, "C.UTF-8");
 	// setup
 	atexit(cleanup_terminal);
 	signal(SIGINT, SIG_IGN);
