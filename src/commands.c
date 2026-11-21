@@ -352,6 +352,19 @@ int run_pipeline(pipeline_t *pl)
 	if (n == 0)
 		return 1;
 
+	expand_pipeline(pl, last_exit_code);
+	for (int i = 0; i < n; i++) {
+		if (pl->cmds[i].argc > 0)
+			continue;
+		if (n > 1) {
+			fputs("90s: empty command after expansion\n", stderr);
+			last_exit_code = 1;
+		} else {
+			last_exit_code = 0;
+		}
+		return 1;
+	}
+
 	command_t *first = &pl->cmds[0];
 	if (n == 1 && !pl->background && !command_has_redirect(first) &&
 		is_builtin(first->argv[0])) {
