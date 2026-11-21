@@ -112,8 +112,7 @@ typedef struct {
 
 static cmd_cache_t cache;
 
-static unsigned long
-hash_str(const char *s)
+static unsigned long hash_str(const char *s)
 {
 	unsigned long h = 5381;
 
@@ -122,8 +121,7 @@ hash_str(const char *s)
 	return h;
 }
 
-static char *
-dup_str(const char *s)
+static char *dup_str(const char *s)
 {
 	size_t n = strlen(s) + 1;
 	char *p = memalloc(n);
@@ -132,8 +130,7 @@ dup_str(const char *s)
 	return p;
 }
 
-static void
-cache_put(char *name)
+static void cache_put(char *name)
 {
 	size_t i = hash_str(name) & (cache.cap - 1);
 
@@ -148,8 +145,7 @@ cache_put(char *name)
 	cache.count++;
 }
 
-static void
-cache_grow(void)
+static void cache_grow(void)
 {
 	char **old = cache.slot;
 	size_t old_cap = cache.cap;
@@ -165,8 +161,7 @@ cache_grow(void)
 	free(old);
 }
 
-static void
-cache_clear(void)
+static void cache_clear(void)
 {
 	for (size_t i = 0; i < cache.cap; i++)
 		free(cache.slot[i]);
@@ -179,8 +174,7 @@ cache_clear(void)
 	memset(&cache, 0, sizeof(cache));
 }
 
-static void
-cache_build(const char *path)
+static void cache_build(const char *path)
 {
 	char *copy = dup_str(path), *tok, *save;
 	int max_dirs = 1;
@@ -197,7 +191,8 @@ cache_build(const char *path)
 	cache.slot = memalloc(sizeof(char *) * cache.cap);
 	memset(cache.slot, 0, sizeof(char *) * cache.cap);
 
-	for (tok = strtok_r(copy, ":", &save); tok; tok = strtok_r(NULL, ":", &save)) {
+	for (tok = strtok_r(copy, ":", &save); tok;
+		 tok = strtok_r(NULL, ":", &save)) {
 		struct stat st;
 		struct dirent *e;
 		int idx = cache.ndirs++;
@@ -216,7 +211,8 @@ cache_build(const char *path)
 			if (strcmp(e->d_name, ".") == 0 || strcmp(e->d_name, "..") == 0)
 				continue;
 			snprintf(full, sizeof(full), "%s/%s", tok, e->d_name);
-			if (stat(full, &st) != 0 || !S_ISREG(st.st_mode) || access(full, X_OK) != 0)
+			if (stat(full, &st) != 0 || !S_ISREG(st.st_mode) ||
+				access(full, X_OK) != 0)
 				continue;
 			if (cache.count * 2 >= cache.cap)
 				cache_grow();
@@ -228,8 +224,7 @@ cache_build(const char *path)
 }
 
 /* rebuilds only when $PATH changed or one of its directories was modified */
-static void
-cmd_cache_refresh(void)
+static void cmd_cache_refresh(void)
 {
 	const char *path = getenv("PATH");
 	bool stale = false;
@@ -244,8 +239,8 @@ cmd_cache_refresh(void)
 		if (stat(cache.dirs[i], &st) != 0) {
 			stale = cache.mtimes[i].tv_sec != 0 || cache.mtimes[i].tv_nsec != 0;
 		} else {
-			stale = st.st_mtim.tv_sec != cache.mtimes[i].tv_sec
-				|| st.st_mtim.tv_nsec != cache.mtimes[i].tv_nsec;
+			stale = st.st_mtim.tv_sec != cache.mtimes[i].tv_sec ||
+					st.st_mtim.tv_nsec != cache.mtimes[i].tv_nsec;
 		}
 	}
 	if (stale)
@@ -257,13 +252,14 @@ bool find_command(char **paths, char *command)
 	struct stat st;
 	size_t i;
 
-	(void) paths;
+	(void)paths;
 	if (command[0] == '\0')
 		return false;
 	if (is_builtin(command))
 		return true;
 	if (strchr(command, '/'))
-		return stat(command, &st) == 0 && S_ISREG(st.st_mode) && access(command, X_OK) == 0;
+		return stat(command, &st) == 0 && S_ISREG(st.st_mode) &&
+			   access(command, X_OK) == 0;
 	if (!cache.slot)
 		cmd_cache_refresh();
 	i = hash_str(command) & (cache.cap - 1);
@@ -448,53 +444,42 @@ void highlight(const char *buffer, char **paths)
 	fflush(stdout);
 }
 
+typedef struct {
+	int rows;
+	int cursor_row;
+} view_t;
+
 void render(const char *prompt, const char *buffer, int cursor_pos,
-			int *prev_lines_out, char **paths)
+			view_t *view, char **paths)
 {
 	int width = get_terminal_width();
 	// strip ANSI for counting
 	int prompt_visible = prompt_visible_length(prompt);
+	int end_total = prompt_visible + display_width(buffer, strlen(buffer));
+	int end_row = end_total / width;
+	int target_total = prompt_visible + display_width(buffer, cursor_pos);
+	int target_row = target_total / width;
 
 	// Move cursor up to the first line if we were multiline
-	if (*prev_lines_out > 1)
-		printf("\033[%dA", *prev_lines_out - 1); // move up
-	printf("\r");								 // go to start of line
-
-	// Clear all lines we might have used
-	for (int i = 0; i < *prev_lines_out; i++) {
-		printf("\033[2K"); // clear entire line
-		if (i < *prev_lines_out - 1)
-			printf("\n");
-	}
-
-	// Move back up to first line
-	if (*prev_lines_out > 1)
-		printf("\033[%dA", *prev_lines_out - 1);
-
-	printf("\r");
+	if (view->cursor_row > 0)
+		printf("\033[%dA", view->cursor_row); // move up
+	printf("\r\033[J");
 
 	// Print prompt + highlighted buffer
 	printf("%s", prompt);
 	highlight(buffer, paths);
-
-	// Calculate where cursor should be
-	int total_visible = prompt_visible + display_width(buffer, cursor_pos);
-	int target_line = total_visible / width;
-	int target_col = total_visible % width;
+	if (end_total > 0 && end_total % width == 0)
+		printf(" \r");
 
 	printf("\r");
-	if (target_line > 0)
-		printf("\033[%dB", target_line); // move down
-	if (target_col > 0)
-		printf("\033[%dC", target_col); // move right
-
+	if (end_row > target_row)
+		printf("\033[%dA", end_row - target_row); // move up
+	if (target_total % width > 0)
+		printf("\033[%dC", target_total % width); // move right
 	fflush(stdout);
 
-	// Update prev_lines for next render
-	int new_total = prompt_visible + display_width(buffer, strlen(buffer));
-	*prev_lines_out = new_total / width + (new_total % width ? 1 : 0);
-	if (*prev_lines_out < 1)
-		*prev_lines_out = 1;
+	view->rows = end_row + 1;
+	view->cursor_row = target_row;
 }
 
 static int str_cmp_qsort(const void *a, const void *b)
@@ -553,7 +538,7 @@ static char **complete_command(char **paths, const char *prefix, int *count)
 			push_match(&matches, &n, &cap, builtin_cmds[i]);
 	}
 
-	(void) paths;
+	(void)paths;
 	if (!cache.slot)
 		cmd_cache_refresh();
 	for (size_t i = 0; i < cache.cap; i++) {
@@ -863,7 +848,7 @@ char *readline(char **paths, const char *prompt)
 	char *buffer = memalloc(bufsize);
 	buffer[0] = '\0';
 
-	int prev_lines = 1;
+	view_t view = {1, 0};
 	bool tab_repeat = false;
 	char last_tab_token[PATH_MAX] = "";
 
@@ -1002,8 +987,12 @@ char *readline(char **paths, const char *prompt)
 							 remainder);
 					tab_repeat = true;
 				} else if (tab_repeat && strcmp(last_tab_token, token) == 0) {
+					if (view.rows - 1 - view.cursor_row > 0)
+						printf("\033[%dB",
+							   view.rows - 1 - view.cursor_row); // move down
 					print_matches(matches, count);
-					prev_lines = 1;
+					view.rows = 1;
+					view.cursor_row = 0;
 				} else {
 					tab_repeat = true;
 				}
@@ -1124,7 +1113,7 @@ char *readline(char **paths, const char *prompt)
 			}
 		}
 
-		render(prompt, buffer, position, &prev_lines, paths);
+		render(prompt, buffer, position, &view, paths);
 
 		if ((strlen(buffer) + 1) >= bufsize) {
 			bufsize += RL_BUFSIZE;
