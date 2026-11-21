@@ -20,7 +20,9 @@
 #define PICKER_CMD "neo"
 #define LIST_DEFAULT 20
 #define HISTGREP_DEFAULT 50
+#define SUGGEST_SCAN_MAX 50000
 
+void change_terminal_attribute(int option);
 int cd(char **args);
 
 typedef struct {
@@ -154,19 +156,20 @@ void cdhist_append(const char *path)
 	free(p);
 }
 
-static int load_runlog(log_t *l)
+static char *memrchr_nl(char *buf, size_t len)
 {
-	size_t cap = 1024;
+	while (len > 0) {
+		if (buf[--len] == '\n')
+			return &buf[len];
+	}
+	return NULL;
+}
 
-	l->v = NULL;
-	l->n = 0;
-	l->buf = read_file(RUNLOG_FILE);
-	if (!l->buf)
-		return -1;
-	l->v = memalloc(sizeof(entry_t) * cap);
+static void parse_entries(char *buf, entry_t **v, size_t *n, size_t *cap)
+{
+	char *line, *next;
 
-	char *next;
-	for (char *line = l->buf; *line; line = next) {
+	for (line = buf; *line; line = next) {
 		char *nl = strchr(line, '\n');
 		char *f[5];
 		int k;
@@ -184,17 +187,30 @@ static int load_runlog(log_t *l)
 		}
 		if (k < 5)
 			continue;
-		if (l->n >= cap) {
-			cap *= 2;
-			l->v = memrealloc(l->v, sizeof(entry_t) * cap);
+		if (*n >= *cap) {
+			*cap *= 2;
+			*v = memrealloc(*v, sizeof(entry_t) * *cap);
 		}
-		l->v[l->n].ts = atol(f[0]);
-		l->v[l->n].dur_ms = atol(f[1]);
-		l->v[l->n].code = atoi(f[2]);
-		l->v[l->n].cwd = f[3];
-		l->v[l->n].cmd = f[4];
-		l->n++;
+		(*v)[*n].ts = atol(f[0]);
+		(*v)[*n].dur_ms = atol(f[1]);
+		(*v)[*n].code = atoi(f[2]);
+		(*v)[*n].cwd = f[3];
+		(*v)[*n].cmd = f[4];
+		(*n)++;
 	}
+}
+
+static int load_runlog(log_t *l)
+{
+	size_t cap = 1024;
+
+	l->v = NULL;
+	l->n = 0;
+	l->buf = read_file(RUNLOG_FILE);
+	if (!l->buf)
+		return -1;
+	l->v = memalloc(sizeof(entry_t) * cap);
+	parse_entries(l->buf, &l->v, &l->n, &cap);
 	return 0;
 }
 
@@ -762,4 +778,87 @@ int cdhist(char **args)
 	free(sel);
 	free_dirs(&d);
 	return rc;
+}
+
+/* append-only in-memory copy of the runlog, extended incrementally once per prompt */
+static struct {
+	entry_t *v;
+	size_t n, cap;
+	char **chunks;
+	size_t nchunks;
+	off_t loaded;
+} sug;
+
+static void suggest_reset(void)
+{
+	for (size_t i = 0; i < sug.nchunks; i++)
+		free(sug.chunks[i]);
+	free(sug.chunks);
+	free(sug.v);
+	memset(&sug, 0, sizeof(sug));
+}
+
+void suggest_refresh(void)
+{
+	char path[PATH_MAX], *chunk, *last_nl;
+	struct stat st;
+	size_t want, got;
+	FILE *f;
+
+	if (stat(data_path(RUNLOG_FILE, path, sizeof(path)), &st) != 0)
+		return;
+	if (st.st_size < sug.loaded)
+		suggest_reset();
+	if (st.st_size == sug.loaded)
+		return;
+	f = fopen(path, "r");
+	if (!f)
+		return;
+	want = st.st_size - sug.loaded;
+	chunk = memalloc(want + 1);
+	if (fseeko(f, sug.loaded, SEEK_SET) != 0) {
+		fclose(f);
+		free(chunk);
+		return;
+	}
+	got = fread(chunk, 1, want, f);
+	fclose(f);
+	chunk[got] = '\0';
+
+	last_nl = memrchr_nl(chunk, got);
+	if (!last_nl) {
+		free(chunk);
+		return;
+	}
+	last_nl[1] = '\0';
+	sug.loaded += last_nl + 1 - chunk;
+
+	if (!sug.v) {
+		sug.cap = 1024;
+		sug.v = memalloc(sizeof(entry_t) * sug.cap);
+	}
+	sug.chunks = memrealloc(sug.chunks, sizeof(char *) * (sug.nchunks + 1));
+	sug.chunks[sug.nchunks++] = chunk;
+	parse_entries(chunk, &sug.v, &sug.n, &sug.cap);
+}
+
+/* newest command starting with prefix, preferring one run in cwd; skips "command not found" runs */
+const char *suggest_for(const char *prefix, const char *cwd)
+{
+	size_t plen = strlen(prefix), scanned = 0;
+	const char *fallback = NULL;
+
+	for (size_t k = sug.n; k-- > 0 && scanned < SUGGEST_SCAN_MAX; scanned++) {
+		const entry_t *e = &sug.v[k];
+
+		if (e->code == 127)
+			continue;
+		if (strncmp(e->cmd, prefix, plen) != 0 || e->cmd[plen] == '\0')
+			continue;
+		if (strcmp(e->cwd, cwd) == 0)
+			return e->cmd;
+		if (!fallback)
+			fallback = e->cmd;
+	}
+	return fallback;
 }

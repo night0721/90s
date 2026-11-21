@@ -450,7 +450,7 @@ typedef struct {
 } view_t;
 
 void render(const char *prompt, const char *buffer, int cursor_pos,
-			view_t *view, char **paths)
+			const char *ghost, view_t *view, char **paths)
 {
 	int width = get_terminal_width();
 	// strip ANSI for counting
@@ -459,8 +459,23 @@ void render(const char *prompt, const char *buffer, int cursor_pos,
 	int end_row = end_total / width;
 	int target_total = prompt_visible + display_width(buffer, cursor_pos);
 	int target_row = target_total / width;
+	size_t ghost_len = 0;
 
-	// Move cursor up to the first line if we were multiline
+	if (ghost) {
+		int avail = width - 1 - end_total % width, w = 0;
+		size_t glen = strlen(ghost);
+
+		while (ghost_len < glen) {
+			unsigned cp;
+			size_t l = utf8_decode(ghost + ghost_len, glen - ghost_len, &cp);
+
+			if (w + cp_width(cp) > avail)
+				break;
+			w += cp_width(cp);
+			ghost_len += l;
+		}
+	}
+
 	if (view->cursor_row > 0)
 		printf("\033[%dA", view->cursor_row); // move up
 	printf("\r\033[J");
@@ -468,7 +483,9 @@ void render(const char *prompt, const char *buffer, int cursor_pos,
 	// Print prompt + highlighted buffer
 	printf("%s", prompt);
 	highlight(buffer, paths);
-	if (end_total > 0 && end_total % width == 0)
+	if (ghost_len > 0)
+		printf("\033[90m%.*s\033[m", (int)ghost_len, ghost);
+	else if (end_total > 0 && end_total % width == 0)
 		printf(" \r");
 
 	printf("\r");
@@ -841,6 +858,15 @@ static char *read_paste(void)
 	return text;
 }
 
+static char *accept_suggestion(char *buffer, size_t *bufsize, int *position,
+							   const char *sugg, bool one_word)
+{
+	const char *tail = sugg + *position;
+	int n = one_word ? word_right(tail, 0, strlen(tail)) : (int)strlen(tail);
+
+	return insert_at(buffer, bufsize, position, tail, n);
+}
+
 char *readline(char **paths, const char *prompt)
 {
 	size_t bufsize = RL_BUFSIZE;
@@ -849,10 +875,15 @@ char *readline(char **paths, const char *prompt)
 	buffer[0] = '\0';
 
 	view_t view = {1, 0};
+	const char *sugg = NULL;
+	char cwd[PATH_MAX];
 	bool tab_repeat = false;
 	char last_tab_token[PATH_MAX] = "";
 
 	cmd_cache_refresh();
+	suggest_refresh();
+	if (!getcwd(cwd, sizeof(cwd)))
+		cwd[0] = '\0';
 	fputs("\033[?2004h", stdout);
 	printf("%s", prompt);
 	fflush(stdout);
@@ -860,6 +891,8 @@ char *readline(char **paths, const char *prompt)
 	while (1) {
 		int c = getchar();
 		int buf_len = strlen(buffer);
+		bool can_accept =
+			sugg && position == buf_len && strncmp(sugg, buffer, buf_len) == 0;
 
 		if (c != '\t')
 			tab_repeat = false;
@@ -869,7 +902,10 @@ char *readline(char **paths, const char *prompt)
 			exit(EXIT_SUCCESS);
 
 		case '\n':
+			render(prompt, buffer, buf_len, NULL, &view, paths);
 			printf("\n");
+			view.rows = 1;
+			view.cursor_row = 0;
 
 			if (strstr(buffer, "!!") != NULL) {
 				char *last_command = read_command(1);
@@ -893,7 +929,10 @@ char *readline(char **paths, const char *prompt)
 			break;
 
 		case 5: /* Ctrl+E */
-			position = buf_len;
+			if (can_accept)
+				buffer = accept_suggestion(buffer, &bufsize, &position, sugg, false);
+			else
+				position = buf_len;
 			break;
 
 		case 11: /* Ctrl+K */
@@ -913,6 +952,7 @@ char *readline(char **paths, const char *prompt)
 		}
 
 		case 3:
+			render(prompt, buffer, buf_len, NULL, &view, paths);
 			fputs("\033[?2004l", stdout);
 			printf("^C\n");
 			buffer[0] = '\0';
@@ -1046,7 +1086,10 @@ char *readline(char **paths, const char *prompt)
 				break;
 			}
 			case KEY_RIGHT:
-				position = next_char(buffer, position, buf_len);
+				if (can_accept)
+					buffer = accept_suggestion(buffer, &bufsize, &position, sugg, false);
+				else
+					position = next_char(buffer, position, buf_len);
 				break;
 			case KEY_LEFT:
 				position = prev_char(buffer, position);
@@ -1063,7 +1106,10 @@ char *readline(char **paths, const char *prompt)
 				position = 0;
 				break;
 			case KEY_END:
-				position = buf_len;
+				if (can_accept)
+					buffer = accept_suggestion(buffer, &bufsize, &position, sugg, false);
+				else
+					position = buf_len;
 				break;
 			case KEY_DELETE:
 				if (position < buf_len) {
@@ -1076,7 +1122,10 @@ char *readline(char **paths, const char *prompt)
 				position = word_left(buffer, position);
 				break;
 			case KEY_WORD_RIGHT:
-				position = word_right(buffer, position, buf_len);
+				if (can_accept)
+					buffer = accept_suggestion(buffer, &bufsize, &position, sugg, true);
+				else
+					position = word_right(buffer, position, buf_len);
 				break;
 			}
 			break;
@@ -1113,7 +1162,9 @@ char *readline(char **paths, const char *prompt)
 			}
 		}
 
-		render(prompt, buffer, position, &view, paths);
+		buf_len = strlen(buffer);
+		sugg = (position == buf_len && buf_len > 0) ? suggest_for(buffer, cwd) : NULL;
+		render(prompt, buffer, position, sugg ? sugg + buf_len : NULL, &view, paths);
 
 		if ((strlen(buffer) + 1) >= bufsize) {
 			bufsize += RL_BUFSIZE;
