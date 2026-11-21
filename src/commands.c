@@ -1,3 +1,4 @@
+#include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -435,6 +436,40 @@ int run_pipeline(pipeline_t *pl)
 	return 1;
 }
 
+static int run_list(list_t *l)
+{
+	int status = 1;
+
+	for (int i = 0; i < l->count; i++) {
+		sep_t prev = i > 0 ? l->seps[i - 1] : SEP_SEQ;
+
+		if ((prev == SEP_AND && last_exit_code != 0) ||
+			(prev == SEP_OR && last_exit_code == 0))
+			continue;
+		status = run_pipeline(&l->pipes[i]);
+		if (status == 0)
+			break;
+	}
+	return status;
+}
+
+static bool is_split_char(const char *line, const char *p)
+{
+	if (*p == '|' || *p == ';')
+		return true;
+	if (*p == '&')
+		return p[1] != '>' && (p == line || p[-1] != '>');
+	return false;
+}
+
+static void append(char **out, size_t *len, const char *s, size_t n)
+{
+	*out = memrealloc(*out, *len + n + 1);
+	memcpy(*out + *len, s, n);
+	*len += n;
+	(*out)[*len] = '\0';
+}
+
 static char *expand_aliases(const char *line)
 {
 	char *out = memalloc(1);
@@ -452,27 +487,28 @@ static char *expand_aliases(const char *line)
 			in_single = !in_single;
 		else if (*p == '"' && !in_single)
 			in_double = !in_double;
-		if (*p != '\0' && !(*p == '|' && !in_single && !in_double))
+		if (*p != '\0' && (in_single || in_double || !is_split_char(line, p)))
 			continue;
 
-		size_t seg_len = p - seg;
-		char *piece = memalloc(seg_len + 1);
-		memcpy(piece, seg, seg_len);
-		piece[seg_len] = '\0';
-		char *expanded = expand_segment(piece);
-		free(piece);
+		const char *start = seg;
+		while (start < p && isspace((unsigned char)*start))
+			start++;
+		append(&out, &out_len, seg, start - seg);
+		if (p > start) {
+			size_t len = p - start;
+			char *piece = memalloc(len + 1);
+			char *expanded;
 
-		size_t add = strlen(expanded);
-		out = memrealloc(out, out_len + add + 2);
-		memcpy(out + out_len, expanded, add);
-		out_len += add;
-		free(expanded);
-		if (*p == '|')
-			out[out_len++] = '|';
-		out[out_len] = '\0';
-
+			memcpy(piece, start, len);
+			piece[len] = '\0';
+			expanded = expand_segment(piece);
+			free(piece);
+			append(&out, &out_len, expanded, strlen(expanded));
+			free(expanded);
+		}
 		if (*p == '\0')
 			break;
+		append(&out, &out_len, p, 1);
 		seg = p + 1;
 	}
 	return out;
@@ -480,13 +516,13 @@ static char *expand_aliases(const char *line)
 
 int execute_line(const char *line)
 {
-	pipeline_t pl;
+	list_t l;
 	char *expanded = expand_aliases(line);
 	int status = 1;
 
-	if (parse_line(expanded, &pl) == 0) {
-		status = run_pipeline(&pl);
-		free_pipeline(&pl);
+	if (parse_list(expanded, &l) == 0) {
+		status = run_list(&l);
+		free_list(&l);
 	} else {
 		last_exit_code = 2;
 	}

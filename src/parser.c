@@ -6,7 +6,7 @@
 #include "90s.h"
 #include "parser.h"
 
-#define OPERATORS "|<>&"
+#define OPERATORS "|<>&;"
 
 static void
 set_str(char **dst, char *src)
@@ -21,12 +21,20 @@ is_word_end(const char *p)
 	return isspace((unsigned char)*p) || strchr(OPERATORS, *p) != NULL;
 }
 
-static command_t *
-push_command(pipeline_t *pl, int *cap)
+static void
+init_pipeline(pipeline_t *pl)
 {
-	if (pl->count >= *cap) {
-		*cap *= 2;
-		pl->cmds = memrealloc(pl->cmds, sizeof(command_t) * *cap);
+	memset(pl, 0, sizeof(*pl));
+	pl->cmds_cap = 4;
+	pl->cmds = memalloc(sizeof(command_t) * pl->cmds_cap);
+}
+
+static command_t *
+push_command(pipeline_t *pl)
+{
+	if (pl->count >= pl->cmds_cap) {
+		pl->cmds_cap *= 2;
+		pl->cmds = memrealloc(pl->cmds, sizeof(command_t) * pl->cmds_cap);
 	}
 	command_t *c = &pl->cmds[pl->count++];
 	memset(c, 0, sizeof(*c));
@@ -34,6 +42,19 @@ push_command(pipeline_t *pl, int *cap)
 	c->argv = memalloc(sizeof(char *) * c->argv_cap);
 	c->argv[0] = NULL;
 	return c;
+}
+
+static pipeline_t *
+push_pipeline(list_t *l, int *cap)
+{
+	if (l->count >= *cap) {
+		*cap *= 2;
+		l->pipes = memrealloc(l->pipes, sizeof(pipeline_t) * *cap);
+		l->seps = memrealloc(l->seps, sizeof(sep_t) * *cap);
+	}
+	init_pipeline(&l->pipes[l->count]);
+	l->seps[l->count] = SEP_END;
+	return &l->pipes[l->count++];
 }
 
 static void
@@ -127,20 +148,69 @@ free_pipeline(pipeline_t *pl)
 	memset(pl, 0, sizeof(*pl));
 }
 
+void
+free_list(list_t *l)
+{
+	for (int i = 0; i < l->count; i++)
+		free_pipeline(&l->pipes[i]);
+	free(l->pipes);
+	free(l->seps);
+	memset(l, 0, sizeof(*l));
+}
+
 int
-parse_line(const char *line, pipeline_t *pl)
+parse_list(const char *line, list_t *l)
 {
 	int cap = 4;
 	const char *p = line;
 	char *target;
+	pipeline_t *pl;
+	command_t *cur;
 
-	memset(pl, 0, sizeof(*pl));
-	pl->cmds = memalloc(sizeof(command_t) * cap);
-	command_t *cur = push_command(pl, &cap);
+	memset(l, 0, sizeof(*l));
+	l->pipes = memalloc(sizeof(pipeline_t) * cap);
+	l->seps = memalloc(sizeof(sep_t) * cap);
+	pl = push_pipeline(l, &cap);
+	cur = push_command(pl);
 
 	while (*p) {
+		sep_t sep = SEP_END;
+		bool bg = false;
+
 		if (isspace((unsigned char)*p)) {
 			p++;
+			continue;
+		}
+
+		if (*p == ';') {
+			sep = SEP_SEQ;
+			p++;
+		} else if (p[0] == '&' && p[1] == '&') {
+			sep = SEP_AND;
+			p += 2;
+		} else if (p[0] == '|' && p[1] == '|') {
+			sep = SEP_OR;
+			p += 2;
+		} else if (*p == '&' && p[1] != '>') {
+			sep = SEP_SEQ;
+			bg = true;
+			p++;
+		}
+		if (sep != SEP_END) {
+			if (cur->argc == 0) {
+				fputs("90s: syntax error: missing command\n", stderr);
+				goto fail;
+			}
+			pl->background = bg;
+			l->seps[l->count - 1] = sep;
+			while (isspace((unsigned char)*p))
+				p++;
+			if (*p == '\0' && sep == SEP_SEQ) {
+				l->seps[l->count - 1] = SEP_END;
+				break;
+			}
+			pl = push_pipeline(l, &cap);
+			cur = push_command(pl);
 			continue;
 		}
 
@@ -150,20 +220,8 @@ parse_line(const char *line, pipeline_t *pl)
 				goto fail;
 			}
 			p++;
-			cur = push_command(pl, &cap);
+			cur = push_command(pl);
 			continue;
-		}
-
-		if (*p == '&' && p[1] != '>') {
-			p++;
-			while (isspace((unsigned char)*p))
-				p++;
-			if (*p) {
-				fputs("90s: syntax error: '&' must end the line\n", stderr);
-				goto fail;
-			}
-			pl->background = true;
-			break;
 		}
 
 		if (*p == '<') {
@@ -223,8 +281,8 @@ parse_line(const char *line, pipeline_t *pl)
 	}
 
 	if (cur->argc == 0) {
-		if (pl->count == 1 && !command_has_redirect(cur) && !pl->background) {
-			free_pipeline(pl);
+		if (l->count == 1 && pl->count == 1 && !command_has_redirect(cur)) {
+			free_list(l);
 			return 0;
 		}
 		fputs("90s: syntax error: missing command\n", stderr);
@@ -233,6 +291,6 @@ parse_line(const char *line, pipeline_t *pl)
 	return 0;
 
 fail:
-	free_pipeline(pl);
+	free_list(l);
 	return -1;
 }
