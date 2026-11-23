@@ -930,7 +930,8 @@ char *readline(char **paths, const char *prompt)
 
 		case 5: /* Ctrl+E */
 			if (can_accept)
-				buffer = accept_suggestion(buffer, &bufsize, &position, sugg, false);
+				buffer =
+					accept_suggestion(buffer, &bufsize, &position, sugg, false);
 			else
 				position = buf_len;
 			break;
@@ -1087,7 +1088,8 @@ char *readline(char **paths, const char *prompt)
 			}
 			case KEY_RIGHT:
 				if (can_accept)
-					buffer = accept_suggestion(buffer, &bufsize, &position, sugg, false);
+					buffer = accept_suggestion(buffer, &bufsize, &position,
+											   sugg, false);
 				else
 					position = next_char(buffer, position, buf_len);
 				break;
@@ -1107,7 +1109,8 @@ char *readline(char **paths, const char *prompt)
 				break;
 			case KEY_END:
 				if (can_accept)
-					buffer = accept_suggestion(buffer, &bufsize, &position, sugg, false);
+					buffer = accept_suggestion(buffer, &bufsize, &position,
+											   sugg, false);
 				else
 					position = buf_len;
 				break;
@@ -1123,7 +1126,8 @@ char *readline(char **paths, const char *prompt)
 				break;
 			case KEY_WORD_RIGHT:
 				if (can_accept)
-					buffer = accept_suggestion(buffer, &bufsize, &position, sugg, true);
+					buffer = accept_suggestion(buffer, &bufsize, &position,
+											   sugg, true);
 				else
 					position = word_right(buffer, position, buf_len);
 				break;
@@ -1163,8 +1167,10 @@ char *readline(char **paths, const char *prompt)
 		}
 
 		buf_len = strlen(buffer);
-		sugg = (position == buf_len && buf_len > 0) ? suggest_for(buffer, cwd) : NULL;
-		render(prompt, buffer, position, sugg ? sugg + buf_len : NULL, &view, paths);
+		sugg = (position == buf_len && buf_len > 0) ? suggest_for(buffer, cwd)
+													: NULL;
+		render(prompt, buffer, position, sugg ? sugg + buf_len : NULL, &view,
+			   paths);
 
 		if ((strlen(buffer) + 1) >= bufsize) {
 			bufsize += RL_BUFSIZE;
@@ -1206,18 +1212,20 @@ void command_loop(char **paths)
 
 		/* Blue time string, pink time, teal arrow */
 		char *git_info = get_git_info();
-		char git_str[128] = "";
-		if (git_info != NULL) {
-			snprintf(git_str, sizeof(git_str), "\033[31m[%s]", git_info);
-			free(git_info);
-		}
-		char prompt[256];
-		snprintf(prompt, sizeof(prompt),
-				 "\033[34m%s \033[35m[%s] %s \033[36m> ", timestr, cwd,
-				 git_str);
+		const char *git_pre = git_info ? "\033[31m[" : "";
+		const char *git_post = git_info ? "]" : "";
+		const char *prompt_fmt = "\033[34m%s \033[35m[%s] %s%s%s \033[36m> ";
+		int prompt_size = snprintf(NULL, 0, prompt_fmt, timestr, cwd, git_pre,
+								   git_info ? git_info : "", git_post) +
+						  1;
+		char *prompt = memalloc(prompt_size);
+		snprintf(prompt, prompt_size, prompt_fmt, timestr, cwd, git_pre,
+				 git_info ? git_info : "", git_post);
+		free(git_info);
 
 		cmd_count = 0;
 		line = readline(paths, prompt);
+		free(prompt);
 		if (line == NULL) {
 			printf("\n");
 			continue;
