@@ -30,35 +30,13 @@ int source(char **args);
 int j(char **args);
 
 char *builtin_cmds[] = {
-	"cd",
-	"help",
-	"exit",
-	"history",
-	"export",
-	"source",
-	"j",
-	"bg",
-	"jobs",
-	"fg",
-	"runlog",
-	"histgrep",
-	"cdhist",
+	"cd", "help", "exit", "history", "export",	 "source", "j",
+	"bg", "jobs", "fg",	  "runlog",	 "histgrep", "cdhist",
 };
 
 int (*builtin_func[])(char **) = {
-	&cd,
-	&help,
-	&quit,
-	&history,
-	&export,
-	&source,
-	&j,
-	&bg,
-	&jobs,
-	&fg,
-	&runlog,
-	&histgrep,
-	&cdhist,
+	&cd, &help, &quit, &history, &export,	&source, &j,
+	&bg, &jobs, &fg,   &runlog,	 &histgrep, &cdhist,
 };
 
 char *gethome(void)
@@ -86,10 +64,7 @@ bool is_builtin(char *command)
 /*
  * autojump (based on cdhist)
  */
-int j(char **args)
-{
-	return cdhist(args);
-}
+int j(char **args) { return cdhist(args); }
 
 int cd(char **args)
 {
@@ -98,7 +73,7 @@ int cd(char **args)
 
 	if (chdir(target) != 0) {
 		perror("90s");
-		return 1;
+		return -1;
 	}
 	if (getcwd(cwd, sizeof(cwd)))
 		cdhist_append(cwd);
@@ -187,7 +162,6 @@ int source(char **args)
 	fclose(file);
 	return status; // Indicate success
 }
-
 
 static int run_builtin(char **args)
 {
@@ -331,7 +305,8 @@ int run_pipeline(pipeline_t *pl)
 	}
 
 	command_t *first = &pl->cmds[0];
-	if (n == 1 && !pl->background && !command_has_redirect(first) && is_builtin(first->argv[0])) {
+	if (n == 1 && !pl->background && !command_has_redirect(first) &&
+		is_builtin(first->argv[0])) {
 		int rc;
 
 		last_exit_code = 0;
