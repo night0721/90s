@@ -61,18 +61,6 @@ int (*builtin_func[])(char **) = {
 	&cdhist,
 };
 
-char *shortcut_dirs[] = {
-	"90s",
-	"bin",
-	"localbin",
-};
-
-char *shortcut_expand_dirs[] = {
-	"~/.nky/git/90s",
-	"~/.local/bin",
-	"/usr/local/bin",
-};
-
 char *gethome(void)
 {
 	char *home = getenv("HOME");
@@ -96,29 +84,11 @@ bool is_builtin(char *command)
 }
 
 /*
- *autojump
+ * autojump (based on cdhist)
  */
 int j(char **args)
 {
-	if (args[1] == NULL) {
-		fprintf(stderr, "90s: not enough arguments\n");
-		return -1;
-	}
-	for (size_t i = 0; i < sizeof(shortcut_dirs) / sizeof(char *); i++) {
-		if (strncmp(args[1], shortcut_dirs[i], strlen(shortcut_dirs[i])) != 0)
-			continue;
-		char path[PATH_MAX];
-		const char *dir = shortcut_expand_dirs[i];
-		if (dir[0] == '~')
-			snprintf(path, sizeof(path), "%s%s", gethome(), dir + 1);
-		else
-			snprintf(path, sizeof(path), "%s", dir);
-		char *cd_args[] = {"cd", path, NULL};
-		cd(cd_args);
-		printf("jumped to %s\n", path);
-		return 1;
-	}
-	return 1;
+	return cdhist(args);
 }
 
 int cd(char **args)

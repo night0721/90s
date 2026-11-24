@@ -712,6 +712,7 @@ int runlog(char **args)
 
 int cdhist(char **args)
 {
+	const char *cmd = (args && args[0]) ? args[0] : "cdhist";
 	bool recent = false, interactive = false, piped = !isatty(STDOUT_FILENO);
 	dirs_t d;
 	dir_t **sel;
@@ -725,14 +726,14 @@ int cdhist(char **args)
 		} else if (strcmp(args[i], "-i") == 0) {
 			interactive = true;
 		} else {
-			fputs("usage: cdhist [-r] [-i] [query...]\n", stderr);
+			fprintf(stderr, "usage: %s [-r] [-i] [query...]\n", cmd);
 			return -1;
 		}
 	}
 	words = &args[i];
 
 	if (load_dirs(&d) == -1 || d.n == 0) {
-		fputs("90s: cdhist: no history\n", stderr);
+		fprintf(stderr, "90s: %s: no history\n", cmd);
 		free_dirs(&d);
 		return -1;
 	}
@@ -744,7 +745,7 @@ int cdhist(char **args)
 	}
 
 	if (n == 0) {
-		fputs("90s: cdhist: no match\n", stderr);
+		fprintf(stderr, "90s: %s: no match\n", cmd);
 		rc = -1;
 	} else if (interactive) {
 		char **paths = memalloc(sizeof(char *) * n);
