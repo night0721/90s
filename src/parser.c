@@ -13,13 +13,6 @@
 
 #define OPERATORS "|<>&;"
 
-static void
-set_str(char **dst, char *src)
-{
-	free(*dst);
-	*dst = src;
-}
-
 static bool
 is_word_end(const char *p)
 {
@@ -60,6 +53,20 @@ push_pipeline(list_t *l, int *cap)
 	init_pipeline(&l->pipes[l->count]);
 	l->seps[l->count] = SEP_END;
 	return &l->pipes[l->count++];
+}
+
+static void
+push_redir(command_t *c, redir_kind_t kind, int fd, int src_fd, char *path)
+{
+	if (c->nredirs >= c->redirs_cap) {
+		c->redirs_cap = c->redirs_cap ? c->redirs_cap * 2 : 4;
+		c->redirs = memrealloc(c->redirs, sizeof(redir_t) * c->redirs_cap);
+	}
+	c->redirs[c->nredirs].kind = kind;
+	c->redirs[c->nredirs].fd = fd;
+	c->redirs[c->nredirs].src_fd = src_fd;
+	c->redirs[c->nredirs].path = path;
+	c->nredirs++;
 }
 
 static void
@@ -201,7 +208,7 @@ read_target(const char **pp)
 bool
 command_has_redirect(const command_t *c)
 {
-	return c->in_file || c->out_file || c->err_file || c->err_to_out;
+	return c->nredirs > 0;
 }
 
 void
@@ -212,9 +219,9 @@ free_pipeline(pipeline_t *pl)
 		for (int j = 0; j < c->argc; j++)
 			free(c->argv[j]);
 		free(c->argv);
-		free(c->in_file);
-		free(c->out_file);
-		free(c->err_file);
+		for (int j = 0; j < c->nredirs; j++)
+			free(c->redirs[j].path);
+		free(c->redirs);
 	}
 	free(pl->cmds);
 	memset(pl, 0, sizeof(*pl));
@@ -228,6 +235,77 @@ free_list(list_t *l)
 	free(l->pipes);
 	free(l->seps);
 	memset(l, 0, sizeof(*l));
+}
+
+/* [n]<f  [n]>f  [n]>>f  [n]>&m  [n]<&m  &>f  &>>f  >&f; returns 1 if consumed, 0 if not a redirection, -1 on error */
+static int
+parse_redirect(const char **pp, command_t *c)
+{
+	const char *p = *pp, *q;
+	bool both = false, append = false;
+	char *target;
+	int fd = -1;
+
+	if (isdigit((unsigned char)*p)) {
+		for (q = p; isdigit((unsigned char)*q); q++)
+			;
+		if ((*q != '<' && *q != '>') || q - p > 3)
+			return 0;
+		fd = atoi(p);
+		p = q;
+	} else if (p[0] == '&' && p[1] == '>') {
+		both = true;
+		p++;
+	} else if (*p != '<' && *p != '>') {
+		return 0;
+	}
+
+	if (*p == '<') {
+		p++;
+		if (fd < 0)
+			fd = 0;
+		if (*p == '&') {
+			for (q = ++p; isdigit((unsigned char)*q); q++)
+				;
+			if (q == p || !is_word_end(q)) {
+				fputs("90s: syntax error: bad file descriptor\n", stderr);
+				return -1;
+			}
+			push_redir(c, REDIR_DUP, fd, atoi(p), NULL);
+			*pp = q;
+			return 1;
+		}
+		if (!(target = read_target(&p)))
+			return -1;
+		push_redir(c, REDIR_IN, fd, -1, target);
+		*pp = p;
+		return 1;
+	}
+
+	p++;
+	if (fd < 0)
+		fd = 1;
+	if (*p == '>') {
+		append = true;
+		p++;
+	} else if (!both && *p == '&') {
+		p++;
+		for (q = p; isdigit((unsigned char)*q); q++)
+			;
+		if (q > p && is_word_end(q)) {
+			push_redir(c, REDIR_DUP, fd, atoi(p), NULL);
+			*pp = q;
+			return 1;
+		}
+		both = true;
+	}
+	if (!(target = read_target(&p)))
+		return -1;
+	push_redir(c, append ? REDIR_APPEND : REDIR_OUT, fd, -1, target);
+	if (both)
+		push_redir(c, REDIR_DUP, 2, fd, NULL);
+	*pp = p;
+	return 1;
 }
 
 int
@@ -296,54 +374,10 @@ parse_list(const char *line, list_t *l)
 			continue;
 		}
 
-		if (*p == '<') {
-			p++;
-			if (!(target = read_target(&p)))
-				goto fail;
-			set_str(&cur->in_file, target);
-			continue;
-		}
-
-		if (strncmp(p, "2>&1", 4) == 0) {
-			cur->err_to_out = true;
-			p += 4;
-			continue;
-		}
-
-		if (*p == '2' && p[1] == '>') {
-			p += 2;
-			cur->err_append = false;
-			if (*p == '>') {
-				cur->err_append = true;
-				p++;
-			}
-			if (!(target = read_target(&p)))
-				goto fail;
-			set_str(&cur->err_file, target);
-			continue;
-		}
-
-		if (*p == '>' || *p == '&') {
-			bool both = false, append = false;
-
-			if (*p == '&') {
-				both = true;
-				p++;
-			}
-			p++;
-			if (*p == '>') {
-				append = true;
-				p++;
-			} else if (!both && *p == '&') {
-				both = true;
-				p++;
-			}
-			if (!(target = read_target(&p)))
-				goto fail;
-			set_str(&cur->out_file, target);
-			cur->out_append = append;
-			if (both)
-				cur->err_to_out = true;
+		switch (parse_redirect(&p, cur)) {
+		case -1:
+			goto fail;
+		case 1:
 			continue;
 		}
 
@@ -529,8 +563,7 @@ expand_pipeline(pipeline_t *pl, int status)
 			free(e);
 		}
 		free(old);
-		expand_file(&c->in_file, status);
-		expand_file(&c->out_file, status);
-		expand_file(&c->err_file, status);
+		for (int k = 0; k < c->nredirs; k++)
+			expand_file(&c->redirs[k].path, status);
 	}
 }

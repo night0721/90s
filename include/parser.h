@@ -8,16 +8,28 @@
 #define VAR_CLOSE '\x02'
 #define QUOTE_MARK '\x05'
 
+typedef enum {
+	REDIR_IN,
+	REDIR_OUT,
+	REDIR_APPEND,
+	REDIR_DUP,
+} redir_kind_t;
+
+/* applied left to right, so "2>&1 >f" and ">f 2>&1" differ like in other shells */
+typedef struct {
+	redir_kind_t kind;
+	int fd;
+	int src_fd;
+	char *path;
+} redir_t;
+
 typedef struct {
 	char **argv;
 	int argc;
 	int argv_cap;
-	char *in_file;
-	char *out_file;
-	char *err_file;
-	bool out_append;
-	bool err_append;
-	bool err_to_out;
+	redir_t *redirs;
+	int nredirs;
+	int redirs_cap;
 } command_t;
 
 typedef struct {

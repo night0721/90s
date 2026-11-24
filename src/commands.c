@@ -286,20 +286,29 @@ static int redirect_fd(const char *path, int flags, int target)
 
 static int apply_redirects(const command_t *c)
 {
-	if (c->in_file && redirect_fd(c->in_file, O_RDONLY, STDIN_FILENO) == -1)
-		return -1;
-	if (c->out_file &&
-		redirect_fd(c->out_file,
-					O_WRONLY | O_CREAT | (c->out_append ? O_APPEND : O_TRUNC),
-					STDOUT_FILENO) == -1)
-		return -1;
-	if (c->err_file &&
-		redirect_fd(c->err_file,
-					O_WRONLY | O_CREAT | (c->err_append ? O_APPEND : O_TRUNC),
-					STDERR_FILENO) == -1)
-		return -1;
-	if (c->err_to_out)
-		dup2(STDOUT_FILENO, STDERR_FILENO);
+	for (int i = 0; i < c->nredirs; i++) {
+		const redir_t *r = &c->redirs[i];
+		int flags = O_WRONLY | O_CREAT;
+
+		switch (r->kind) {
+		case REDIR_IN:
+			if (redirect_fd(r->path, O_RDONLY, r->fd) == -1)
+				return -1;
+			break;
+		case REDIR_OUT:
+		case REDIR_APPEND:
+			flags |= r->kind == REDIR_APPEND ? O_APPEND : O_TRUNC;
+			if (redirect_fd(r->path, flags, r->fd) == -1)
+				return -1;
+			break;
+		case REDIR_DUP:
+			if (dup2(r->src_fd, r->fd) == -1) {
+				fprintf(stderr, "90s: %d: %s\n", r->src_fd, strerror(errno));
+				return -1;
+			}
+			break;
+		}
+	}
 	return 0;
 }
 
@@ -471,7 +480,7 @@ static bool is_split_char(const char *line, const char *p)
 	if (*p == '|' || *p == ';')
 		return true;
 	if (*p == '&')
-		return p[1] != '>' && (p == line || p[-1] != '>');
+		return p[1] != '>' && (p == line || (p[-1] != '>' && p[-1] != '<'));
 	return false;
 }
 
