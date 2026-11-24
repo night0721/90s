@@ -858,6 +858,18 @@ static char *read_paste(void)
 	return text;
 }
 
+static char *set_buffer(char *buffer, size_t *bufsize, const char *text)
+{
+	size_t len = strlen(text);
+
+	if (len + 1 >= *bufsize) {
+		*bufsize = len + 1 + RL_BUFSIZE;
+		buffer = memrealloc(buffer, *bufsize);
+	}
+	memcpy(buffer, text, len + 1);
+	return buffer;
+}
+
 static char *accept_suggestion(char *buffer, size_t *bufsize, int *position,
 							   const char *sugg, bool one_word)
 {
@@ -1067,8 +1079,7 @@ char *readline(char **paths, const char *prompt)
 				char *hist = read_command(1);
 
 				if (hist) {
-					strncpy(buffer, hist, bufsize - 1);
-					buffer[bufsize - 1] = '\0';
+					buffer = set_buffer(buffer, &bufsize, hist);
 					position = strlen(buffer);
 				}
 				break;
@@ -1077,8 +1088,7 @@ char *readline(char **paths, const char *prompt)
 				char *hist = read_command(0);
 
 				if (hist) {
-					strncpy(buffer, hist, bufsize - 1);
-					buffer[bufsize - 1] = '\0';
+					buffer = set_buffer(buffer, &bufsize, hist);
 					position = strlen(buffer);
 				} else {
 					buffer[0] = '\0';
