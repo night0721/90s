@@ -19,11 +19,11 @@
 #include "constants.h"
 #include "git.h"
 #include "history.h"
+#include "jobs.h"
 #include "runlog.h"
 
 extern char *builtin_cmds[];
 extern int last_exit_code;
-void reap_children(void);
 
 void *memalloc(size_t size)
 {
@@ -1269,6 +1269,7 @@ int main(int argc, char **argv)
 	signal(SIGINT, SIG_IGN);
 	signal(SIGQUIT, SIG_IGN);
 	signal(SIGTERM, quit_sig);
+	jobs_init();
 	check_history_file();
 	check_aliases_file();
 	char **paths = setup_path_variable();

@@ -15,18 +15,11 @@
 #include "commands.h"
 #include "constants.h"
 #include "history.h"
-#include "job.h"
+#include "jobs.h"
 #include "parser.h"
 #include "runlog.h"
 
-#define BG_MAX 64
-
 int last_exit_code;
-
-static struct {
-	pid_t pid;
-	char *name;
-} bg_table[BG_MAX];
 
 int cd(char **args);
 int help(char **args);
@@ -35,16 +28,37 @@ int history(char **args);
 int export(char **args);
 int source(char **args);
 int j(char **args);
-int bg(char **args);
 
 char *builtin_cmds[] = {
-	"cd", "help", "exit",	"history",	"export", "source",
-	"j",  "bg",	  "runlog", "histgrep", "cdhist",
+	"cd",
+	"help",
+	"exit",
+	"history",
+	"export",
+	"source",
+	"j",
+	"bg",
+	"jobs",
+	"fg",
+	"runlog",
+	"histgrep",
+	"cdhist",
 };
 
 int (*builtin_func[])(char **) = {
-	&cd, &help, &quit,	 &history,	&export, &source,
-	&j,	 &bg,	&runlog, &histgrep, &cdhist,
+	&cd,
+	&help,
+	&quit,
+	&history,
+	&export,
+	&source,
+	&j,
+	&bg,
+	&jobs,
+	&fg,
+	&runlog,
+	&histgrep,
+	&cdhist,
 };
 
 char *shortcut_dirs[] = {
@@ -204,61 +218,6 @@ int source(char **args)
 	return status; // Indicate success
 }
 
-int bg(char **args)
-{
-	if (args[1] == NULL) {
-		fprintf(stderr, "90s: not enough arguments\n");
-		return -1;
-	}
-	int job_index = atoi(args[1]);
-	if (job_index == 0) {
-		fprintf(stderr, "90s: invalid job index\n");
-		return -1;
-	}
-	job *search = get_job(job_index - 1);
-	if (search == NULL) {
-		fprintf(stderr, "90s: no such job\n");
-		return -1;
-	}
-	printf("Job %i: %s\n", job_index, search->command);
-	return 1;
-}
-
-static void bg_remember(pid_t pid, const char *name)
-{
-	size_t len = strlen(name) + 1;
-
-	for (int i = 0; i < BG_MAX; i++) {
-		if (bg_table[i].pid != 0)
-			continue;
-		bg_table[i].pid = pid;
-		bg_table[i].name = memalloc(len);
-		memcpy(bg_table[i].name, name, len);
-		return;
-	}
-}
-
-void reap_children(void)
-{
-	pid_t pid;
-	int st;
-
-	while ((pid = waitpid(-1, &st, WNOHANG)) > 0) {
-		for (int i = 0; i < BG_MAX; i++) {
-			if (bg_table[i].pid != pid)
-				continue;
-			if (WIFEXITED(st) && WEXITSTATUS(st) == 0)
-				printf("[Done] %d %s\n", (int)pid, bg_table[i].name);
-			else
-				printf("[Exit %d] %d %s\n",
-					   WIFEXITED(st) ? WEXITSTATUS(st) : 128 + WTERMSIG(st),
-					   (int)pid, bg_table[i].name);
-			free(bg_table[i].name);
-			bg_table[i].pid = 0;
-			break;
-		}
-	}
-}
 
 static int run_builtin(char **args)
 {
@@ -331,10 +290,13 @@ static char **colorize(char **argv, int argc)
 	return out;
 }
 
-void exec_command(command_t *c, bool background)
+static void exec_command(command_t *c)
 {
-	signal(SIGINT, background ? SIG_IGN : SIG_DFL);
-	signal(SIGQUIT, background ? SIG_IGN : SIG_DFL);
+	signal(SIGINT, SIG_DFL);
+	signal(SIGQUIT, SIG_DFL);
+	signal(SIGTSTP, SIG_DFL);
+	signal(SIGTTIN, SIG_DFL);
+	signal(SIGTTOU, SIG_DFL);
 
 	if (apply_redirects(c) == -1)
 		_exit(1);
@@ -352,6 +314,30 @@ void exec_command(command_t *c, bool background)
 	else
 		fprintf(stderr, "90s: %s: %s\n", argv[0], strerror(errno));
 	_exit(127);
+}
+
+static char *command_text(const pipeline_t *pl)
+{
+	size_t len = 1;
+	char *out;
+
+	for (int i = 0; i < pl->count; i++) {
+		for (int k = 0; k < pl->cmds[i].argc; k++)
+			len += strlen(pl->cmds[i].argv[k]) + 1;
+		len += 3;
+	}
+	out = memalloc(len);
+	out[0] = '\0';
+	for (int i = 0; i < pl->count; i++) {
+		if (i > 0)
+			strcat(out, " | ");
+		for (int k = 0; k < pl->cmds[i].argc; k++) {
+			if (k > 0)
+				strcat(out, " ");
+			strcat(out, pl->cmds[i].argv[k]);
+		}
+	}
+	return out;
 }
 
 int run_pipeline(pipeline_t *pl)
@@ -375,19 +361,27 @@ int run_pipeline(pipeline_t *pl)
 	}
 
 	command_t *first = &pl->cmds[0];
-	if (n == 1 && !pl->background && !command_has_redirect(first) &&
-		is_builtin(first->argv[0])) {
-		int rc = run_builtin(first->argv);
+	if (n == 1 && !pl->background && !command_has_redirect(first) && is_builtin(first->argv[0])) {
+		int rc;
 
-		last_exit_code = rc < 0 ? 1 : 0;
+		last_exit_code = 0;
+		rc = run_builtin(first->argv);
+		if (rc < 0)
+			last_exit_code = 1;
 		return rc;
 	}
 
-	pid_t pids[n];
+	char *text = command_text(pl);
+	job_t *j = job_new(text);
 	int started = 0;
 	int in = STDIN_FILENO;
-	int status = 0;
 
+	free(text);
+	if (!j) {
+		fputs("90s: too many jobs\n", stderr);
+		last_exit_code = 1;
+		return 1;
+	}
 	last_exit_code = 1;
 
 	fflush(NULL);
@@ -411,6 +405,7 @@ int run_pipeline(pipeline_t *pl)
 			break;
 		}
 		if (pid == 0) {
+			job_child_setup(j, !pl->background);
 			if (in != STDIN_FILENO) {
 				dup2(in, STDIN_FILENO);
 				close(in);
@@ -420,10 +415,11 @@ int run_pipeline(pipeline_t *pl)
 				close(fds[0]);
 				close(fds[1]);
 			}
-			exec_command(&pl->cmds[i], pl->background);
+			exec_command(&pl->cmds[i]);
 		}
 
-		pids[started++] = pid;
+		job_add_proc(j, pid);
+		started++;
 		if (in != STDIN_FILENO)
 			close(in);
 		if (fds[1] != -1) {
@@ -434,27 +430,18 @@ int run_pipeline(pipeline_t *pl)
 	if (in != STDIN_FILENO)
 		close(in);
 
-	if (pl->background && started > 0) {
-		char *name = pl->cmds[0].argv[0];
-		int job_index = add_job(pids[started - 1], name, true);
-		printf("[Job: %i] [Process ID: %i] [Command: %s]\n", job_index + 1,
-			   pids[started - 1], name);
-		bg_remember(pids[started - 1], name);
-		last_exit_code = 0;
-	} else {
-		for (int i = 0; i < started; i++) {
-			int st;
-
-			waitpid(pids[i], &st, 0);
-			if (i == started - 1)
-				status = st;
-		}
-		if (started > 0)
-			last_exit_code = WIFEXITED(status) ? WEXITSTATUS(status)
-											   : 128 + WTERMSIG(status);
+	if (started == 0) {
+		job_discard(j);
+		change_terminal_attribute(1);
+		return 1;
 	}
-
-	change_terminal_attribute(1);
+	if (pl->background) {
+		job_background(j);
+		last_exit_code = 0;
+		change_terminal_attribute(1);
+	} else {
+		job_foreground(j, false);
+	}
 	return 1;
 }
 
