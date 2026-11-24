@@ -72,11 +72,11 @@ histgrep -z clone   # fuzzy search commands
 histgrep -d src gcc # filter commands executed under "src"
 histgrep test | sh  # pipe bare unique commands when not on a TTY
 
-# Directory navigation history
-cdhist              # list visited directories scored by frecency
-cdhist -r           # list visited directories sorted by recency
-cdhist 90s          # jump directly to highest matching directory
-cdhist -i           # interactively pick a directory to jump to (uses neo)
+# Directory navigation history & autojump
+j [query...]        # jump to highest matching directory by frecency
+j -r [query...]     # jump to most recent matching directory
+j -i [query...]     # interactively pick a directory to jump to (uses neo)
+cdhist              # list visited directories scored by frecency (or cdhist [query...])
 ```
 
 # Dependencies
