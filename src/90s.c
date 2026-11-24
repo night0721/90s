@@ -74,6 +74,24 @@ void change_terminal_attribute(int option)
 	}
 }
 
+static char *dup_str(const char *s)
+{
+	size_t n = strlen(s) + 1;
+	char *p = memalloc(n);
+
+	memcpy(p, s, n);
+	return p;
+}
+
+void free_paths(char **paths)
+{
+	if (!paths)
+		return;
+	for (int i = 0; paths[i] != NULL; i++)
+		free(paths[i]);
+	free(paths);
+}
+
 char **setup_path_variable(void)
 {
 	char *envpath = getenv("PATH");
@@ -81,23 +99,48 @@ char **setup_path_variable(void)
 		fprintf(stderr, "90s: PATH environment variable is missing\n");
 		exit(EXIT_FAILURE);
 	}
-	char *path = memalloc(strlen(envpath) + 1);
-	strcpy(path, envpath);
-	int path_count = 2; // adding one to be correct and one for terminator
+	int path_count = 1;
 	for (const char *c = envpath; *c != '\0'; c++) {
 		if (*c == ':')
 			path_count++;
 	}
-	char **paths = memalloc(sizeof(char *) * path_count);
-	char *token = strtok(path, ":");
+	char **paths = memalloc(sizeof(char *) * (path_count + 1));
+	const char *start = envpath;
 	int counter = 0;
-	while (token != NULL) {
-		paths[counter] = token;
-		token = strtok(NULL, ":");
-		counter++;
+	for (const char *c = envpath; ; c++) {
+		if (*c == ':' || *c == '\0') {
+			size_t len = c - start;
+			if (len == 0) {
+				paths[counter++] = dup_str(".");
+			} else {
+				char *dir = memalloc(len + 1);
+				memcpy(dir, start, len);
+				dir[len] = '\0';
+				paths[counter++] = dir;
+			}
+			if (*c == '\0')
+				break;
+			start = c + 1;
+		}
 	}
 	paths[counter] = NULL;
 	return paths;
+}
+
+char **refresh_path_variable(char **old_paths)
+{
+	static char *cached_path = NULL;
+	const char *envpath = getenv("PATH");
+
+	if (!envpath)
+		envpath = "";
+	if (cached_path && strcmp(cached_path, envpath) == 0)
+		return old_paths;
+
+	free(cached_path);
+	cached_path = dup_str(envpath);
+	free_paths(old_paths);
+	return setup_path_variable();
 }
 
 typedef struct {
@@ -119,15 +162,6 @@ static unsigned long hash_str(const char *s)
 	for (; *s; s++)
 		h = h * 33 + (unsigned char)*s;
 	return h;
-}
-
-static char *dup_str(const char *s)
-{
-	size_t n = strlen(s) + 1;
-	char *p = memalloc(n);
-
-	memcpy(p, s, n);
-	return p;
 }
 
 static void cache_put(char *name)
@@ -176,10 +210,11 @@ static void cache_clear(void)
 
 static void cache_build(const char *path)
 {
-	char *copy = dup_str(path), *tok, *save;
 	int max_dirs = 1;
 
 	cache_clear();
+	if (!path)
+		return;
 	for (const char *c = path; *c; c++) {
 		if (*c == ':')
 			max_dirs++;
@@ -191,36 +226,55 @@ static void cache_build(const char *path)
 	cache.slot = memalloc(sizeof(char *) * cache.cap);
 	memset(cache.slot, 0, sizeof(char *) * cache.cap);
 
-	for (tok = strtok_r(copy, ":", &save); tok;
-		 tok = strtok_r(NULL, ":", &save)) {
-		struct stat st;
-		struct dirent *e;
-		int idx = cache.ndirs++;
-		DIR *d;
+	const char *start = path;
+	for (const char *c = path; ; c++) {
+		if (*c == ':' || *c == '\0') {
+			size_t len = c - start;
+			const char *tok;
+			char dir_buf[PATH_MAX];
 
-		cache.dirs[idx] = dup_str(tok);
-		memset(&cache.mtimes[idx], 0, sizeof(struct timespec));
-		if (stat(tok, &st) == 0)
-			cache.mtimes[idx] = st.st_mtim;
-		d = opendir(tok);
-		if (!d)
-			continue;
-		while ((e = readdir(d)) != NULL) {
-			char full[PATH_MAX];
+			if (len == 0) {
+				tok = ".";
+			} else {
+				if (len >= sizeof(dir_buf))
+					len = sizeof(dir_buf) - 1;
+				memcpy(dir_buf, start, len);
+				dir_buf[len] = '\0';
+				tok = dir_buf;
+			}
 
-			if (strcmp(e->d_name, ".") == 0 || strcmp(e->d_name, "..") == 0)
-				continue;
-			snprintf(full, sizeof(full), "%s/%s", tok, e->d_name);
-			if (stat(full, &st) != 0 || !S_ISREG(st.st_mode) ||
-				access(full, X_OK) != 0)
-				continue;
-			if (cache.count * 2 >= cache.cap)
-				cache_grow();
-			cache_put(dup_str(e->d_name));
+			struct stat st;
+			struct dirent *e;
+			int idx = cache.ndirs++;
+			DIR *d;
+
+			cache.dirs[idx] = dup_str(tok);
+			memset(&cache.mtimes[idx], 0, sizeof(struct timespec));
+			if (stat(tok, &st) == 0)
+				cache.mtimes[idx] = st.st_mtim;
+			d = opendir(tok);
+			if (d) {
+				while ((e = readdir(d)) != NULL) {
+					char full[PATH_MAX];
+
+					if (strcmp(e->d_name, ".") == 0 || strcmp(e->d_name, "..") == 0)
+						continue;
+					snprintf(full, sizeof(full), "%s/%s", tok, e->d_name);
+					if (stat(full, &st) != 0 || !S_ISREG(st.st_mode) ||
+						access(full, X_OK) != 0)
+						continue;
+					if (cache.count * 2 >= cache.cap)
+						cache_grow();
+					cache_put(dup_str(e->d_name));
+				}
+				closedir(d);
+			}
+
+			if (*c == '\0')
+				break;
+			start = c + 1;
 		}
-		closedir(d);
 	}
-	free(copy);
 }
 
 /* rebuilds only when $PATH changed or one of its directories was modified */
@@ -556,8 +610,7 @@ static char **complete_command(char **paths, const char *prefix, int *count)
 	}
 
 	(void)paths;
-	if (!cache.slot)
-		cmd_cache_refresh();
+	cmd_cache_refresh();
 	for (size_t i = 0; i < cache.cap; i++) {
 		if (cache.slot[i] && has_prefix(cache.slot[i], prefix))
 			push_match(&matches, &n, &cap, cache.slot[i]);
@@ -1195,6 +1248,7 @@ void command_loop(char **paths)
 	int status = 1;
 
 	while (status) {
+		paths = refresh_path_variable(paths);
 		reap_children();
 		time_t t = time(NULL);
 		struct tm *current_time = localtime(&t);
@@ -1209,9 +1263,10 @@ void command_loop(char **paths)
 		char *home = getenv("HOME");
 
 		int i = 0, j = 0;
-		if (home) {
+		if (home && home[0] != '\0') {
 			size_t home_len = strlen(home);
-			if (strncmp(cwd, home, home_len) == 0) {
+			if (strncmp(cwd, home, home_len) == 0 &&
+				(cwd[home_len] == '/' || cwd[home_len] == '\0')) {
 				cwd[j++] = '~';
 				i += home_len;
 			}
@@ -1288,6 +1343,7 @@ int main(int argc, char **argv)
 	command_loop(paths);
 
 	// cleanup
-	free(paths);
+	free_paths(paths);
+	cache_clear();
 	return EXIT_SUCCESS;
 }

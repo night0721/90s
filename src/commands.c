@@ -119,9 +119,14 @@ int export(char **args)
 {
 	args++;
 	while (*args != NULL) {
-		char *variable = strtok(*args, "=\n");
-		char *value = strtok(NULL, "=\n");
-		if (variable != NULL && value != NULL) {
+		char *eq = strchr(*args, '=');
+		if (eq != NULL && eq != *args) {
+			*eq = '\0';
+			char *variable = *args;
+			char *value = eq + 1;
+			char *nl = strchr(value, '\n');
+			if (nl)
+				*nl = '\0';
 			if (setenv(variable, value, 1) != 0) {
 				fprintf(stderr, "90s: Error setting environment variable\n");
 				return -1;

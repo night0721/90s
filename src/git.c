@@ -38,11 +38,16 @@ char *get_git_info(void)
 
 	// Skip ##
 	char *p = first_line + 3;
+	if (strncmp(p, "No commits yet on ", 18) == 0)
+		p += 18;
+	else if (strncmp(p, "Initial commit on ", 18) == 0)
+		p += 18;
+
 	char branch[64] = "";
 
 	// Branch name
 	int i = 0;
-	while (*p && *p != '.' && *p != ' ' && *p != '[' && i < 63) {
+	while (*p && strncmp(p, "...", 3) != 0 && *p != ' ' && *p != '[' && i < 63) {
 		branch[i++] = *p++;
 	}
 	branch[i] = '\0';
